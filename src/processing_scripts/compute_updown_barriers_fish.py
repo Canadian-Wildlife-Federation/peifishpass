@@ -1,6 +1,6 @@
 #----------------------------------------------------------------------------------
 #
-# Copyright 2022 by Canadian Wildlife Federation, Alberta Environment and Parks
+# Copyright 2023 by Canadian Wildlife Federation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -38,17 +38,6 @@ snapDistance = appconfig.config['CABD_DATABASE']['snap_distance']
 
 edges = []
 nodes = dict()
-
-with appconfig.connectdb() as conn:
-
-    query = f"""
-    SELECT code, name
-    FROM {dataSchema}.{appconfig.fishSpeciesTable};
-    """
-
-    with conn.cursor() as cursor:
-        cursor.execute(query)
-        specCodes = cursor.fetchall()
 
 class Node:
     
@@ -310,6 +299,15 @@ def writeResults(connection, code):
 def main():
     
     with appconfig.connectdb() as conn:
+
+        query = f"""
+        SELECT code, name
+        FROM {dataSchema}.{appconfig.fishSpeciesTable};
+        """
+
+        with conn.cursor() as cursor:
+            cursor.execute(query)
+            specCodes = cursor.fetchall()
 
         for species in specCodes:
             code = species[0]

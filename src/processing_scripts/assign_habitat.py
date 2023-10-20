@@ -1,6 +1,6 @@
 #----------------------------------------------------------------------------------
 #
-# Copyright 2022 by Canadian Wildlife Federation, Alberta Environment and Parks
+# Copyright 2023 by Canadian Wildlife Federation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ dbTargetStreamTable = appconfig.config['PROCESSING']['stream_table']
 dbSegmentGradientField = appconfig.config['GRADIENT_PROCESSING']['segment_gradient_field']
 
 def computeHabitatModel(connection):
-    
+
     # spawning
     print("Computing spawning habitat")
     query = f"""
@@ -43,7 +43,7 @@ def computeHabitatModel(connection):
     with connection.cursor() as cursor:
         cursor.execute(query)
         features = cursor.fetchall()
-    
+
         for feature in features:
             code = feature[0]
             name = feature[1]
@@ -76,21 +76,21 @@ def computeHabitatModel(connection):
                 with connection.cursor() as cursor2:
                     cursor2.execute(query)
                 connection.commit()
-            
-            elif code == 'bt': # brook trout
 
-                query = f"""
-                    ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} DROP COLUMN IF EXISTS {colname};
-                    ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} ADD COLUMN IF NOT EXISTS {colname} boolean;
+            # elif code == 'bt': # brook trout
+
+            #     query = f"""
+            #         ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} DROP COLUMN IF EXISTS {colname};
+            #         ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} ADD COLUMN IF NOT EXISTS {colname} boolean;
                     
-                    UPDATE {dbTargetSchema}.{dbTargetStreamTable} 
-                        SET {colname} = true;
+            #         UPDATE {dbTargetSchema}.{dbTargetStreamTable} 
+            #             SET {colname} = true;
                     
-                """
-                with connection.cursor() as cursor2:
-                    cursor2.execute(query)
-                connection.commit()
-            
+            #     """
+            #     with connection.cursor() as cursor2:
+            #         cursor2.execute(query)
+            #     connection.commit()
+
             elif code == 'ae': # american eel
 
                 query = f"""
@@ -141,7 +141,7 @@ def computeHabitatModel(connection):
     with connection.cursor() as cursor:
         cursor.execute(query)
         features = cursor.fetchall()
-    
+
         for feature in features:
             code = feature[0]
             name = feature[1]
@@ -174,21 +174,21 @@ def computeHabitatModel(connection):
                 with connection.cursor() as cursor2:
                     cursor2.execute(query)
                 connection.commit()
-            
-            elif code == 'bt': # brook trout
 
-                query = f"""
-                    ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} DROP COLUMN IF EXISTS {colname};
-                    ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} ADD COLUMN IF NOT EXISTS {colname} boolean;
+            # elif code == 'bt': # brook trout
+
+            #     query = f"""
+            #         ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} DROP COLUMN IF EXISTS {colname};
+            #         ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} ADD COLUMN IF NOT EXISTS {colname} boolean;
                     
-                    UPDATE {dbTargetSchema}.{dbTargetStreamTable} 
-                        SET {colname} = true;
+            #         UPDATE {dbTargetSchema}.{dbTargetStreamTable}
+            #             SET {colname} = true;
                     
-                """
-                with connection.cursor() as cursor2:
-                    cursor2.execute(query)
-                connection.commit()
-            
+            #     """
+            #     with connection.cursor() as cursor2:
+            #         cursor2.execute(query)
+            #     connection.commit()
+
             elif code == 'ae': # american eel
 
                 query = f"""
@@ -242,11 +242,11 @@ def computeHabitatModel(connection):
     with connection.cursor() as cursor:
         cursor.execute(query)
         features = cursor.fetchall()
-    
+
         for feature in features:
             code = feature[0]
             name = feature[1]
-            
+
             spawning = "habitat_spawn_" + code
             rearing = "habitat_rear_" + code
 
@@ -267,16 +267,16 @@ def computeHabitatModel(connection):
                 cursor2.execute(query)
 
 def main():                            
-    #--- main program ---    
+    #--- main program ---
     with appconfig.connectdb() as conn:
-        
+
         conn.autocommit = False
-        
+
         print("Computing Habitat Models Per Species")
         computeHabitatModel(conn)
-        
+
     print("done")
 
 
 if __name__ == "__main__":
-    main()  
+    main()

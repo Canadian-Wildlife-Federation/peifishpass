@@ -1,6 +1,6 @@
 #----------------------------------------------------------------------------------
 #
-# Copyright 2022 by Canadian Wildlife Federation, Alberta Environment and Parks
+# Copyright 2023 by Canadian Wildlife Federation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -48,7 +48,7 @@ with appconfig.connectdb() as conn:
         cursor.execute(query)
         specCodes = cursor.fetchall()
 
-def breakstreams (conn):
+def breakstreams(conn):
         
     # find all break points
     # all barriers regardless of passability status (dams, modelled crossings, and assessed crossings)
@@ -242,7 +242,7 @@ def breakstreams (conn):
         cursor.execute(query)
     conn.commit()
 
-def recomputeMainstreamMeasure(connection):
+def recomputeMainstreamMeasure(conn):
     
     query = f"""
         WITH mainstems AS (
@@ -265,10 +265,10 @@ def recomputeMainstreamMeasure(connection):
         WHERE measures.id = {dbTargetSchema}.{dbTargetStreamTable}.id
     """
     #load geometries and create a network
-    with connection.cursor() as cursor:
+    with conn.cursor() as cursor:
         cursor.execute(query)
 
-def updateBarrier(connection):
+def updateBarrier(conn):
     
     query = f"""
         ALTER TABLE {dbTargetSchema}.{dbBarrierTable} DROP COLUMN IF EXISTS stream_id;
@@ -305,9 +305,9 @@ def updateBarrier(connection):
             WHERE a.barrier_id = {dbTargetSchema}.{dbBarrierTable}.id;
     """
     
-    with connection.cursor() as cursor:
+    with conn.cursor() as cursor:
         cursor.execute(query)
-    connection.commit()           
+    conn.commit()           
                         
 def main():
     with appconfig.connectdb() as connection:
