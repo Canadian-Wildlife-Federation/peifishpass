@@ -17,13 +17,15 @@
 #----------------------------------------------------------------------------------
 
 #
-# Loads dam barriers from the CABD API into local database
+# Loads dam barriers from the CABD API into local database and beaver activity from local partners
 #
-import appconfig
 import subprocess
-import psycopg2 as pg2
-import psycopg2.extras
-import json, urllib.request, requests
+import json
+import urllib.request
+import appconfig
+# import psycopg2 as pg2
+# import psycopg2.extras
+
 from appconfig import dataSchema
 
 iniSection = appconfig.args.args[0]
@@ -165,7 +167,15 @@ def main():
         with conn.cursor() as cursor:
             cursor.execute(query)
         conn.commit()
-         
+
+        # set the id for all dams to be the cabd_id so that it's a stable id
+        query = f"""
+            UPDATE {dbTargetSchema}.{dbBarrierTable} SET id = cabd_id WHERE type = 'dam';
+        """
+        with conn.cursor() as cursor:
+            cursor.execute(query)
+        conn.commit()
+
         print("Loading barriers from CABD dataset complete")
 
         # add beaver activity data and snap to network
