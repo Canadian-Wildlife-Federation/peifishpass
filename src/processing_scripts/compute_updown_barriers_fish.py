@@ -312,8 +312,6 @@ def main():
         for species in specCodes:
             code = species[0]
             name = species[1]
-        
-            conn.autocommit = False
 
             edges.clear()
             nodes.clear()
