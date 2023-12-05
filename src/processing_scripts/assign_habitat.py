@@ -71,6 +71,15 @@ def computeHabitatModel(connection):
                         ELSE a.{colname} END
                         FROM {updateTable} b
                         WHERE b.stream_id = a.id AND b.habitat_spawn_{code} IS NOT NULL AND b.update_type = 'habitat';
+
+                    UPDATE {dbTargetSchema}.{dbTargetStreamTable} 
+                        SET {colname} = true
+                        WHERE {code}_accessibility IN ('{appconfig.Accessibility.ACCESSIBLE.value}', '{appconfig.Accessibility.POTENTIAL.value}')
+                        AND
+                        {dbSegmentGradientField} >= {mingradient} 
+                        AND 
+                        {dbSegmentGradientField} < {maxgradient};
+                    
                     
                 """
                 with connection.cursor() as cursor2:
@@ -165,6 +174,14 @@ def computeHabitatModel(connection):
                     SET {colname} = false
                     FROM {updateTable} b
                     WHERE b.stream_id = a.id AND b.habitat_rear_{code} = 'false' AND b.update_type = 'habitat';
+
+                    UPDATE {dbTargetSchema}.{dbTargetStreamTable} 
+                        SET {colname} = true
+                        WHERE {code}_accessibility IN ('{appconfig.Accessibility.ACCESSIBLE.value}', '{appconfig.Accessibility.POTENTIAL.value}')
+                        AND
+                        {dbSegmentGradientField} >= {mingradient}
+                        AND 
+                        {dbSegmentGradientField} < {maxgradient};
 
                     UPDATE {dbTargetSchema}.{dbTargetStreamTable}
                     SET {colname} = false
