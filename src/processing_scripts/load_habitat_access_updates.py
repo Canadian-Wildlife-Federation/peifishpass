@@ -69,34 +69,11 @@ def main():
         UPDATE {dbTargetSchema}.{dataTable}
         SET stream_id = a.stream_id, stream_measure = a.streammeasure
         FROM match a WHERE a.pntid = {dbTargetSchema}.{dataTable}.id;
-
         """
 
         with conn.cursor() as cursor:
             cursor.execute(query)
         conn.commit()
-
-        # add comments to stream table
-        query = f"""
-            ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} DROP COLUMN IF EXISTS "comments";
-            ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} DROP COLUMN IF EXISTS "comments_source";
-            ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} ADD COLUMN "comments" varchar;
-            ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} ADD COLUMN "comments_source" varchar;
-
-            UPDATE {dbTargetSchema}.{dbTargetStreamTable} a
-            SET
-                "comments" = b.comments,
-                comments_source = b.update_source
-            FROM {dbTargetSchema}.{dataTable} b
-            WHERE b.stream_id = a.id
-            AND b.update_type = 'comment';
-        """
-
-        with conn.cursor() as cursor:
-            cursor.execute(query)
-        conn.commit()
-
-    print("Loading habitat and accessibility updates complete")
 
 if __name__ == "__main__":
     main()

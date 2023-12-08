@@ -19,11 +19,10 @@
 #
 # this script computes upstream/downstream barrier counts and ids
 #
-import appconfig
-import shapely.wkb
 from collections import deque
+import shapely.wkb
 import psycopg2.extras
-
+import appconfig
 
 iniSection = appconfig.args.args[0]
 

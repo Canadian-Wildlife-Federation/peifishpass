@@ -36,6 +36,7 @@ dbCrossingsTable = appconfig.config['CROSSINGS']['crossings_table']
 dbVertexTable = appconfig.config['GRADIENT_PROCESSING']['vertex_gradient_table']
 dbTargetGeom = appconfig.config['ELEVATION_PROCESSING']['smoothedgeometry_field']
 dbGradientBarrierTable = appconfig.config['BARRIER_PROCESSING']['gradient_barrier_table']
+dbHabAccessUpdates = "habitat_access_updates"
 
 with appconfig.connectdb() as conn:
 
@@ -78,6 +79,11 @@ def breakstreams(conn):
         INSERT INTO {dbTargetSchema}.{dbGradientBarrierTable} (point, id, type, {colStringSimple}) 
             SELECT snapped_point, id, type, {colStringSimple}
             FROM {dbTargetSchema}.{dbBarrierTable};
+
+        --habitat and accessibility updates
+        INSERT INTO {dbTargetSchema}.{dbGradientBarrierTable} (point, id, type) 
+            SELECT snapped_point, id, update_type
+            FROM {dbTargetSchema}.{dbHabAccessUpdates};
     """
         
     # print(query)

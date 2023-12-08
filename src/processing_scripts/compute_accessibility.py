@@ -31,18 +31,18 @@ dbTargetSchema = appconfig.config[iniSection]['output_schema']
 watershed_id = appconfig.config[iniSection]['watershed_id']
 dbTargetStreamTable = appconfig.config['PROCESSING']['stream_table']
 updateTable = dbTargetSchema + ".habitat_access_updates"
-    
+
 def computeAccessibility(connection):
-        
+
     query = f"""
         SELECT code, name
         FROM {dataSchema}.{appconfig.fishSpeciesTable};
     """
-    
+
     with connection.cursor() as cursor:
         cursor.execute(query)
         features = cursor.fetchall()
-        
+
         for feature in features:
             code = feature[0]
             name = feature[1]
@@ -50,7 +50,6 @@ def computeAccessibility(connection):
             print("  processing " + name)
             # initial accessibility calculation
             query = f"""
-            
                 ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} DROP COLUMN IF EXISTS {code}_accessibility;
             
                 ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} ADD COLUMN {code}_accessibility varchar;
@@ -65,36 +64,19 @@ def computeAccessibility(connection):
             """
             with connection.cursor() as cursor2:
                 cursor2.execute(query)
-            
-            # process any updates to accessibility
-            query = f"""
-            UPDATE {dbTargetSchema}.{dbTargetStreamTable} a
-                SET {code}_accessibility = 
-                CASE
-                WHEN b.{code}_accessibility = '{appconfig.Accessibility.ACCESSIBLE.value}' AND barrier_down_{code}_cnt = 0 THEN '{appconfig.Accessibility.ACCESSIBLE.value}'
-                WHEN b.{code}_accessibility = '{appconfig.Accessibility.ACCESSIBLE.value}' AND barrier_down_{code}_cnt > 0 THEN '{appconfig.Accessibility.POTENTIAL.value}'
-                WHEN b.{code}_accessibility = '{appconfig.Accessibility.NOT.value}' THEN '{appconfig.Accessibility.NOT.value}'
-                ELSE a.{code}_accessibility END
-                FROM {updateTable} b
-                WHERE b.stream_id = a.id AND b.{code}_accessibility IS NOT NULL AND b.update_type = 'access';
-            """
-            with connection.cursor() as cursor2:
-                cursor2.execute(query)
-            
-            connection.commit()
 
-def main():        
+def main():
     #--- main program ---
-            
+
     with appconfig.connectdb() as conn:
-        
+
         conn.autocommit = False
-        
+
         print("Computing Gradient Accessibility Per Species")
         computeAccessibility(conn)
-        
+
     print("done")
 
-    
+
 if __name__ == "__main__":
-    main() 
+    main()
