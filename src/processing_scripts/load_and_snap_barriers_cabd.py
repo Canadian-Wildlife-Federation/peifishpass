@@ -68,6 +68,7 @@ def main():
                 snapped_point geometry(POINT, {appconfig.dataSrid}),
                 name varchar(256),
                 type varchar(32),
+                assessment_type varchar(256),
                 owner varchar,
                 passability_status varchar,
                 passability_status_notes varchar,
