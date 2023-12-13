@@ -74,7 +74,10 @@ def loadBarrierUpdates(specCodes, connection):
 def joinBarrierUpdates(connection):
 
     query = f"""
-        ALTER TABLE {dbTargetSchema}.{dbTargetTable} ADD COLUMN barrier_id uuid;
+        ALTER TABLE {dbTargetSchema}.{dbTargetTable} ADD COLUMN IF NOT EXISTS barrier_id uuid;
+
+        SELECT public.snap_to_network('{dbTargetSchema}', '{dbBarrierTable}', 'original_point', 'snapped_point', '{snapDistance}');
+        UPDATE {dbTargetSchema}.{dbBarrierTable} SET snapped_point = original_point WHERE snapped_point IS NULL;
     """
     
     with connection.cursor() as cursor:
@@ -114,7 +117,7 @@ def processUpdates(specCodes, connection):
         waitCount = 0
         waitQuery = f"""SELECT COUNT(*) FROM {dbTargetSchema}.{dbTargetTable} WHERE update_status = 'wait'"""
 
-        while(True):
+        while True:
             with connection.cursor() as cursor:
                 cursor.execute(initializeQuery)
                 cursor.execute(waitQuery)
@@ -209,6 +212,9 @@ def processUpdates(specCodes, connection):
 
     with connection.cursor() as cursor:
         cursor.execute(newDeleteQuery)
+    connection.commit()
+
+    joinBarrierUpdates(connection)
 
     mappingQuery = f"""
         SELECT public.snap_to_network('{dbTargetSchema}', '{dbBarrierTable}', 'original_point', 'snapped_point', '{snapDistance}');
