@@ -35,8 +35,6 @@
 # Habitat base calculation: historically accessible areas (i.e., accessible or potentially accessible) and where the gradient is within the smelt gradient limits
 # Habitat modified by: updates from workshop
 
-import getpass
-import psycopg2 as pg2
 from psycopg2.extras import DictCursor
 import appconfig
 
@@ -106,37 +104,73 @@ def getUpstreamDownstream(conn):
 
     query = f"""
         DROP FUNCTION IF EXISTS public.downstream;
-        CREATE OR REPLACE FUNCTION public.downstream(id uuid, limit_id uuid default null)
+        CREATE OR REPLACE FUNCTION public.downstream(sid uuid, limit_id uuid DEFAULT NULL)
         RETURNS TABLE (stream_id uuid)
-        LANGUAGE sql
-        AS '
-        WITH RECURSIVE walk_network(id, geometry) AS (
-            SELECT id, geometry FROM {dbTargetSchema}.{dbTargetStreamTable} WHERE id = $1
-        UNION ALL
-            SELECT n.id, n.geometry
-            FROM {dbTargetSchema}.{dbTargetStreamTable} n, walk_network w
-            WHERE ST_DWithin(ST_EndPoint(w.geometry),ST_StartPoint(n.geometry),0.01)
-			and (n.id IS NOT NULL OR n.id != $2)
-        )
-        SELECT id FROM walk_network;
-        '
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+
+        IF limit_id IS NOT NULL THEN
+            RETURN QUERY
+            WITH RECURSIVE walk_network(id, geometry) AS (
+                SELECT id, geometry FROM {dbTargetSchema}.{dbTargetStreamTable} WHERE id = $1
+                UNION ALL
+                SELECT n.id, n.geometry
+                FROM {dbTargetSchema}.{dbTargetStreamTable} n, walk_network w
+                WHERE ST_DWithin(ST_EndPoint(w.geometry),ST_StartPoint(n.geometry),0.01)
+                and n.id != $2
+            )
+            SELECT id FROM walk_network;
+
+        ELSE
+            RETURN QUERY
+            WITH RECURSIVE walk_network(id, geometry) AS (
+                SELECT id, geometry FROM {dbTargetSchema}.{dbTargetStreamTable} WHERE id = $1
+                UNION ALL
+                SELECT n.id, n.geometry
+                FROM {dbTargetSchema}.{dbTargetStreamTable} n, walk_network w
+                WHERE ST_DWithin(ST_EndPoint(w.geometry),ST_StartPoint(n.geometry),0.01)
+                and n.id IS NOT NULL
+            )
+            SELECT id FROM walk_network;
+
+        END IF;
+        END; $$
         IMMUTABLE;
 
         DROP FUNCTION IF EXISTS public.upstream;
-        CREATE OR REPLACE FUNCTION public.upstream(id uuid, limit_id uuid default null)
+        CREATE OR REPLACE FUNCTION public.upstream(sid uuid, limit_id uuid DEFAULT NULL)
         RETURNS TABLE (stream_id uuid)
-        LANGUAGE sql
-        AS '
-        WITH RECURSIVE walk_network(id, geometry) AS (
-            SELECT id, geometry FROM {dbTargetSchema}.{dbTargetStreamTable} WHERE id = $1
-        UNION ALL
-            SELECT n.id, n.geometry
-            FROM {dbTargetSchema}.{dbTargetStreamTable} n, walk_network w
-            WHERE ST_DWithin(ST_StartPoint(w.geometry),ST_EndPoint(n.geometry),0.01)
-			and (n.id IS NOT NULL OR n.id != $2)
-        )
-        SELECT id FROM walk_network;
-        '
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+
+        IF limit_id IS NOT NULL THEN
+            RETURN QUERY
+            WITH RECURSIVE walk_network(id, geometry) AS (
+                SELECT id, geometry FROM {dbTargetSchema}.{dbTargetStreamTable} WHERE id = $1
+                UNION ALL
+                SELECT n.id, n.geometry
+                FROM {dbTargetSchema}.{dbTargetStreamTable} n, walk_network w
+                WHERE ST_DWithin(ST_StartPoint(w.geometry),ST_EndPoint(n.geometry),0.01)
+                and n.id != $2
+            )
+            SELECT id FROM walk_network;
+
+        ELSE
+            RETURN QUERY
+            WITH RECURSIVE walk_network(id, geometry) AS (
+                SELECT id, geometry FROM {dbTargetSchema}.{dbTargetStreamTable} WHERE id = $1
+                UNION ALL
+                SELECT n.id, n.geometry
+                FROM {dbTargetSchema}.{dbTargetStreamTable} n, walk_network w
+                WHERE ST_DWithin(ST_StartPoint(w.geometry),ST_EndPoint(n.geometry),0.01)
+                and n.id IS NOT NULL
+            )
+            SELECT id FROM walk_network;
+
+        END IF;
+        END; $$
         IMMUTABLE;
     """
     with conn.cursor() as cursor:
@@ -533,12 +567,12 @@ def simplifyHabitatAccess(codes, conn):
         colname = "habitat_" + code
 
         query = f"""
-            UPDATE {dbTargetSchema}.{dbTargetStreamTable} 
-                SET {colname} = false WHERE {spawning} = false AND {rearing} = false;
-        
+            UPDATE {dbTargetSchema}.{dbTargetStreamTable} SET {colname} = false WHERE {spawning} = false AND {rearing} = false;
+            UPDATE {dbTargetSchema}.{dbTargetStreamTable} set {colname} = false, {spawning} = false, {rearing} = false WHERE {code}_accessibility = '{appconfig.Accessibility.NOT.value}';
         """
         with conn.cursor() as cursor:
             cursor.execute(query)
+        conn.commit()
 
         query = f"""
             UPDATE {dbTargetSchema}.{dbTargetStreamTable}

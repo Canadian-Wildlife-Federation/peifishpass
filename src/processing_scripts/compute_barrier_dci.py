@@ -236,7 +236,7 @@ def writeResults(conn, newAllBarrierData, species):
 
 def main():
 
-    print("Started!")
+    print("Calculating barrier DCI values")
     with appconfig.connectdb() as conn:
         conn.autocommit = False
 
@@ -252,7 +252,7 @@ def main():
             for s in spec:
                 species.append(s[0])
 
-        print("species list: ", species)
+        # print("species list: ", species)
         
         speciesDCI = getSpeciesConnectivity(conn, species)
 
@@ -265,7 +265,7 @@ def main():
         newAllBarrierData = []
 
         for barrierid in barrierData:
-            print("barrier id:", barrierid, "object:", barrierData[barrierid])
+            # print("barrier id:", barrierid, "object:", barrierData[barrierid])
             dci = getBarrierDCI(barrierData[barrierid], barrierData, streamData, species, speciesDCI, totalHabitat)
             newBarrierData = BarrierData(barrierData[barrierid].bid, barrierData[barrierid].passabilitystatus)
             newBarrierData.dci = dci
