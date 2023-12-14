@@ -45,6 +45,7 @@ dbTargetSchema = appconfig.config[iniSection]['output_schema']
 dbTargetStreamTable = appconfig.config['PROCESSING']['stream_table']
 dbHabAccessUpdates = "habitat_access_updates"
 dbIdField = "id"
+dbSegmentGradientField = appconfig.config['GRADIENT_PROCESSING']['segment_gradient_field']
 
 def getPoints(conn):
 
@@ -219,12 +220,34 @@ def processStreams(points, codes, conn):
                             cursor.execute(query)
                         conn.commit()
 
-                elif (update_type == 'access' and pair_id is None):
+                elif (update_type == 'access' and pair_id is None and not upstream and not downstream):
 
                     query = f"""
                         UPDATE {dbTargetSchema}.{dbTargetStreamTable} SET {code}_accessibility = '{appconfig.Accessibility.NOT.value}'
                         WHERE {dbIdField} IN (SELECT public.upstream('{stream_id_up}'));
 
+                        UPDATE {dbTargetSchema}.{dbTargetStreamTable} SET {code}_accessibility = '{appconfig.Accessibility.ACCESSIBLE.value}'
+                        WHERE {dbIdField} IN (SELECT public.downstream('{stream_id_down}'));
+                    """
+
+                    with conn.cursor() as cursor:
+                        cursor.execute(query)
+                    conn.commit()
+
+                elif (update_type == 'access' and pair_id is None and upstream and not downstream):
+
+                    query = f"""
+                        UPDATE {dbTargetSchema}.{dbTargetStreamTable} SET {code}_accessibility = '{appconfig.Accessibility.ACCESSIBLE.value}'
+                        WHERE {dbIdField} IN (SELECT public.upstream('{stream_id_up}'));
+                    """
+
+                    with conn.cursor() as cursor:
+                        cursor.execute(query)
+                    conn.commit()
+
+                elif (update_type == 'access' and pair_id is None and downstream and not upstream):
+
+                    query = f"""
                         UPDATE {dbTargetSchema}.{dbTargetStreamTable} SET {code}_accessibility = '{appconfig.Accessibility.ACCESSIBLE.value}'
                         WHERE {dbIdField} IN (SELECT public.downstream('{stream_id_down}'));
                     """
@@ -558,8 +581,21 @@ def addComments(points, conn):
 
 def simplifyHabitatAccess(codes, conn):
 
+    query = f"""
+    SELECT code, name,
+    spawn_gradient_min::float, spawn_gradient_max::float
+    FROM {dataSchema}.{appconfig.fishSpeciesTable};
+    """
+
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        codes = cursor.fetchall()
+
     for c in codes:
         code = c[0]
+        name = c[1]
+        mingradient = c[2]
+        maxgradient = c[3]
 
         spawning = "habitat_spawn_" + code
         rearing = "habitat_rear_" + code
@@ -582,6 +618,33 @@ def simplifyHabitatAccess(codes, conn):
         with conn.cursor() as cursor:
             cursor.execute(query)
         conn.commit()
+
+        if code == 'sm':
+            
+            query = f"""
+            UPDATE {dbTargetSchema}.{dbTargetStreamTable} 
+            SET {spawning} = true
+            WHERE {code}_accessibility IN ('{appconfig.Accessibility.ACCESSIBLE.value}', '{appconfig.Accessibility.POTENTIAL.value}')
+            AND 
+            {dbSegmentGradientField} >= {mingradient}
+            AND 
+            {dbSegmentGradientField} < {maxgradient};
+
+            UPDATE {dbTargetSchema}.{dbTargetStreamTable} 
+            SET {rearing} = true
+            WHERE {code}_accessibility IN ('{appconfig.Accessibility.ACCESSIBLE.value}', '{appconfig.Accessibility.POTENTIAL.value}')
+            AND 
+            {dbSegmentGradientField} >= {mingradient}
+            AND 
+            {dbSegmentGradientField} < {maxgradient};
+
+            UPDATE {dbTargetSchema}.{dbTargetStreamTable} 
+            SET {colname} = true WHERE {spawning} is true or {rearing} is true;
+            """
+
+            with conn.cursor() as cursor:
+                cursor.execute(query)
+            conn.commit()
 
 def main():
 

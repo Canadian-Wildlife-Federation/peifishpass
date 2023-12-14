@@ -38,7 +38,6 @@ from processing_scripts import break_streams_at_barriers
 from processing_scripts import compute_updown_barriers_fish
 from processing_scripts import compute_accessibility
 from processing_scripts import assign_habitat
-from processing_scripts import process_habitat_access_updates_test
 from processing_scripts import process_habitat_access_updates
 from processing_scripts import compute_barriers_upstream_values
 from processing_scripts import compute_barrier_dci

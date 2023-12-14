@@ -119,7 +119,7 @@ def computeHabitatModel(connection):
                         SET {colname} = true
                         WHERE {code}_accessibility IN ('{appconfig.Accessibility.ACCESSIBLE.value}', '{appconfig.Accessibility.POTENTIAL.value}')
                         AND 
-                        {dbSegmentGradientField} >= {mingradient} 
+                        {dbSegmentGradientField} >= {mingradient}
                         AND 
                         {dbSegmentGradientField} < {maxgradient};
                     
