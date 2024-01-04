@@ -232,6 +232,12 @@ def writeResults(conn, newAllBarrierData, species):
         with conn.cursor() as cursor:
             cursor.execute(query)
 
+    query = f"""
+        DROP TABLE IF EXISTS {dbTargetSchema}.temp;
+    """
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+
     conn.commit()
 
 def main():

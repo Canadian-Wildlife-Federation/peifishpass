@@ -255,6 +255,28 @@ def processUpdates(specCodes, connection):
 
     processMultiple(specCodes, connection)
 
+    query = f"""
+        UPDATE {dbTargetSchema}.{dbBarrierTable} SET crossing_status =
+            CASE
+            WHEN type = 'stream_crossing' AND assessment_type = 'Full AAS barrier assessment' THEN 'ASSESSED'
+            WHEN type = 'stream_crossing' AND assessment_type = 'Informal observations during site visit' THEN 'PRESENCE CONFIRMED'
+            ELSE crossing_status END;
+        UPDATE {dbTargetSchema}.{dbBarrierTable} SET crossing_subtype = 'culvert' WHERE type = 'stream_crossing' AND culvert_type IS NOT NULL;
+        UPDATE {dbTargetSchema}.{dbBarrierTable} SET crossing_type = 
+            CASE
+            WHEN type = 'stream_crossing' AND crossing_subtype = 'bridge' THEN 'OBS'
+            WHEN type = 'stream_crossing' AND crossing_subtype = 'culvert' THEN 'CBS'
+            WHEN type = 'stream_crossing' AND culvert_type IS NOT NULL THEN 'CBS'
+            ELSE crossing_type END;
+        UPDATE {dbTargetSchema}.{dbBarrierTable} AS b SET wshed_name = initcap(n.name) FROM {dataSchema}.{watershedTable} AS n WHERE st_contains(n.geometry, b.snapped_point);
+
+        UPDATE {dbTargetSchema}.{dbBarrierTable} SET id = modelled_id WHERE modelled_id IS NOT NULL;
+    """
+
+    with connection.cursor() as cursor:
+        cursor.execute(query)
+    connection.commit()
+
 #--- main program ---
 def main():
 

@@ -299,8 +299,6 @@ def loadToBarriers(connection):
             crossing_feature_type, crossing_type,
             crossing_subtype
         FROM {dbTargetSchema}.{dbModelledCrossingsTable};
-
-        UPDATE {dbTargetSchema}.{dbBarrierTable} SET wshed_name = '{dbWatershedId}';
         
         SELECT public.snap_to_network('{dbTargetSchema}', '{dbBarrierTable}', 'original_point', 'snapped_point', '{snapDistance}');
     """

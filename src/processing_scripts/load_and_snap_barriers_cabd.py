@@ -80,10 +80,8 @@ def main():
                 stream_id uuid,
                 wshed_name varchar,
                 transport_feature_name varchar,
-
-                critical_habitat varchar[],
                 
-                crossing_status varchar CHECK (crossing_status in ('MODELLED', 'ASSESSED', 'HABITAT_CONFIRMATION', 'DESIGN', 'REMEDIATED')),
+                crossing_status varchar CHECK (crossing_status in ('MODELLED', 'PRESENCE CONFIRMED', 'ASSESSED', 'HABITAT_CONFIRMATION', 'DESIGN', 'REMEDIATED')),
                 crossing_feature_type varchar CHECK (crossing_feature_type IN ('ROAD', 'RAIL', 'TRAIL')),
                 crossing_type varchar,
                 crossing_subtype varchar,
@@ -91,7 +89,6 @@ def main():
                 culvert_number varchar,
                 structure_id varchar,
                 date_examined date,
-                road varchar,
                 culvert_type varchar,
                 culvert_condition varchar,
                 action_items varchar,
