@@ -1,6 +1,6 @@
 #----------------------------------------------------------------------------------
 #
-# Copyright 2022 by Canadian Wildlife Federation, Alberta Environment and Parks
+# Copyright 2023 by Canadian Wildlife Federation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -77,6 +77,8 @@ def createTable(connection):
             DROP TABLE IF EXISTS {dbTargetSchema}.{dbModelledCrossingsTable}_archive;
             CREATE TABLE {dbTargetSchema}.{dbModelledCrossingsTable}_archive 
             AS SELECT * FROM {dbTargetSchema}.{dbModelledCrossingsTable};
+
+            ALTER TABLE {dbTargetSchema}.{dbModelledCrossingsTable}_archive OWNER TO cwf_analyst;
             
             DROP TABLE IF EXISTS {dbTargetSchema}.{dbModelledCrossingsTable};
             
@@ -96,18 +98,20 @@ def createTable(connection):
                 
                 primary key (modelled_id)
             );
+
+            ALTER TABLE {dbTargetSchema}.{dbModelledCrossingsTable} OWNER TO cwf_analyst;
             
         """
-    
+
         with connection.cursor() as cursor:
             cursor.execute(query)
-        
+
         # add species-specific passability fields
         for species in specCodes:
             code = species[0]
 
             colname = "passability_status_" + code
-            
+
             query = f"""
                 alter table {dbTargetSchema}.{dbModelledCrossingsTable} 
                 add column if not exists {colname} numeric;
@@ -115,7 +119,7 @@ def createTable(connection):
 
             with connection.cursor() as cursor:
                 cursor.execute(query)
-    
+
     else:
         query = f"""
             DROP TABLE IF EXISTS {dbTargetSchema}.{dbModelledCrossingsTable};
@@ -136,18 +140,20 @@ def createTable(connection):
                 
                 primary key (modelled_id)
             );
+
+            ALTER TABLE {dbTargetSchema}.{dbModelledCrossingsTable} OWNER TO cwf_analyst;
             
         """
-    
+
         with connection.cursor() as cursor:
             cursor.execute(query)
 
-        # add species-specific passability fields 
+        # add species-specific passability fields
         for species in specCodes:
             code = species[0]
 
             colname = "passability_status_" + code
-            
+
             query = f"""
                 alter table {dbTargetSchema}.{dbModelledCrossingsTable} 
                 add column if not exists {colname} numeric;
@@ -245,21 +251,21 @@ def matchArchive(connection):
         cursor.execute(query)
 
 def computeAttributes(connection):
-    
+
     #assign all modelled crossings a crossing_status and passability_status
-    
+
     query = f"""
         UPDATE {dbTargetSchema}.{dbModelledCrossingsTable}
         SET crossing_status = 'MODELLED';
     """
     with connection.cursor() as cursor:
         cursor.execute(query)
-    
+
     for species in specCodes:
         code = species[0]
 
         colname = "passability_status_" + code
-            
+
         query = f"""
             UPDATE {dbTargetSchema}.{dbModelledCrossingsTable}
             SET {colname} = 0 WHERE {colname} IS NULL;
@@ -277,7 +283,7 @@ def loadToBarriers(connection):
 
         col = "passability_status_" + code
         newCols.append(col)
-    
+
     colString = ','.join(newCols)
 
     query = f"""
@@ -299,8 +305,6 @@ def loadToBarriers(connection):
             crossing_feature_type, crossing_type,
             crossing_subtype
         FROM {dbTargetSchema}.{dbModelledCrossingsTable};
-
-        UPDATE {dbTargetSchema}.{dbBarrierTable} SET wshed_name = '{dbWatershedId}';
         
         SELECT public.snap_to_network('{dbTargetSchema}', '{dbBarrierTable}', 'original_point', 'snapped_point', '{snapDistance}');
     """
@@ -309,12 +313,12 @@ def loadToBarriers(connection):
         cursor.execute(query)
     connection.commit()
 
-def main():                        
-    #--- main program ---    
+def main():
+    #--- main program ---
     with appconfig.connectdb() as conn:
-        
+
         conn.autocommit = False
-        
+
         print("Computing Modelled Crossings")
 
         tableExists(conn)
@@ -325,7 +329,7 @@ def main():
 
             print("  creating tables")
             createTable(conn)
-            
+
             print("  computing modelled crossings")
             computeCrossings(conn)
 

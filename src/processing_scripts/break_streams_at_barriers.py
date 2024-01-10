@@ -1,6 +1,6 @@
 #----------------------------------------------------------------------------------
 #
-# Copyright 2022 by Canadian Wildlife Federation, Alberta Environment and Parks
+# Copyright 2023 by Canadian Wildlife Federation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -36,6 +36,7 @@ dbCrossingsTable = appconfig.config['CROSSINGS']['crossings_table']
 dbVertexTable = appconfig.config['GRADIENT_PROCESSING']['vertex_gradient_table']
 dbTargetGeom = appconfig.config['ELEVATION_PROCESSING']['smoothedgeometry_field']
 dbGradientBarrierTable = appconfig.config['BARRIER_PROCESSING']['gradient_barrier_table']
+dbHabAccessUpdates = "habitat_access_updates"
 
 with appconfig.connectdb() as conn:
 
@@ -48,7 +49,7 @@ with appconfig.connectdb() as conn:
         cursor.execute(query)
         specCodes = cursor.fetchall()
 
-def breakstreams (conn):
+def breakstreams(conn):
         
     # find all break points
     # all barriers regardless of passability status (dams, modelled crossings, and assessed crossings)
@@ -73,11 +74,18 @@ def breakstreams (conn):
             type varchar,
             {colString} numeric
             );
+
+        ALTER TABLE {dbTargetSchema}.{dbGradientBarrierTable} OWNER TO cwf_analyst;
     
         -- barriers
         INSERT INTO {dbTargetSchema}.{dbGradientBarrierTable} (point, id, type, {colStringSimple}) 
             SELECT snapped_point, id, type, {colStringSimple}
             FROM {dbTargetSchema}.{dbBarrierTable};
+
+        --habitat and accessibility updates
+        INSERT INTO {dbTargetSchema}.{dbGradientBarrierTable} (point, id, type) 
+            SELECT snapped_point, id, update_type
+            FROM {dbTargetSchema}.{dbHabAccessUpdates};
     """
         
     # print(query)
@@ -242,7 +250,7 @@ def breakstreams (conn):
         cursor.execute(query)
     conn.commit()
 
-def recomputeMainstreamMeasure(connection):
+def recomputeMainstreamMeasure(conn):
     
     query = f"""
         WITH mainstems AS (
@@ -265,10 +273,10 @@ def recomputeMainstreamMeasure(connection):
         WHERE measures.id = {dbTargetSchema}.{dbTargetStreamTable}.id
     """
     #load geometries and create a network
-    with connection.cursor() as cursor:
+    with conn.cursor() as cursor:
         cursor.execute(query)
 
-def updateBarrier(connection):
+def updateBarrier(conn):
     
     query = f"""
         ALTER TABLE {dbTargetSchema}.{dbBarrierTable} DROP COLUMN IF EXISTS stream_id;
@@ -305,9 +313,9 @@ def updateBarrier(connection):
             WHERE a.barrier_id = {dbTargetSchema}.{dbBarrierTable}.id;
     """
     
-    with connection.cursor() as cursor:
+    with conn.cursor() as cursor:
         cursor.execute(query)
-    connection.commit()           
+    conn.commit()           
                         
 def main():
     with appconfig.connectdb() as connection:

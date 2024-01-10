@@ -1,6 +1,6 @@
 #----------------------------------------------------------------------------------
 #
-# Copyright 2022 by Canadian Wildlife Federation, Alberta Environment and Parks
+# Copyright 2023 by Canadian Wildlife Federation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,12 +26,11 @@ from appconfig import dataSchema
 
 iniSection = appconfig.args.args[0]
 dbTargetSchema = appconfig.config[iniSection]['output_schema']
-updateTable = dbTargetSchema + ".habitat_access_updates"
 dbTargetStreamTable = appconfig.config['PROCESSING']['stream_table']
 dbSegmentGradientField = appconfig.config['GRADIENT_PROCESSING']['segment_gradient_field']
 
 def computeHabitatModel(connection):
-    
+
     # spawning
     print("Computing spawning habitat")
     query = f"""
@@ -43,7 +42,7 @@ def computeHabitatModel(connection):
     with connection.cursor() as cursor:
         cursor.execute(query)
         features = cursor.fetchall()
-    
+
         for feature in features:
             code = feature[0]
             name = feature[1]
@@ -63,20 +62,22 @@ def computeHabitatModel(connection):
                     UPDATE {dbTargetSchema}.{dbTargetStreamTable} 
                         SET {colname} = false;
 
-                    UPDATE {dbTargetSchema}.{dbTargetStreamTable} a
-                    SET {colname} = 
-                        CASE
-                        WHEN b.habitat_spawn_{code} = 'true' THEN true
-                        WHEN b.habitat_spawn_{code} = 'false' THEN false
-                        ELSE a.{colname} END
-                        FROM {updateTable} b
-                        WHERE b.stream_id = a.id AND b.habitat_spawn_{code} IS NOT NULL AND b.update_type = 'habitat';
-                    
+                    UPDATE {dbTargetSchema}.{dbTargetStreamTable} 
+                        SET {colname} = true
+                        WHERE {code}_accessibility IN ('{appconfig.Accessibility.ACCESSIBLE.value}', '{appconfig.Accessibility.POTENTIAL.value}')
+                        AND
+                        {dbSegmentGradientField} >= {mingradient} 
+                        AND 
+                        {dbSegmentGradientField} < {maxgradient};
+
+                    UPDATE {dbTargetSchema}.{dbTargetStreamTable}
+                    SET {colname} = false
+                    WHERE {code}_accessibility = '{appconfig.Accessibility.NOT.value}';
                 """
                 with connection.cursor() as cursor2:
                     cursor2.execute(query)
                 connection.commit()
-            
+
             elif code == 'bt': # brook trout
 
                 query = f"""
@@ -90,7 +91,7 @@ def computeHabitatModel(connection):
                 with connection.cursor() as cursor2:
                     cursor2.execute(query)
                 connection.commit()
-            
+
             elif code == 'ae': # american eel
 
                 query = f"""
@@ -118,7 +119,7 @@ def computeHabitatModel(connection):
                         SET {colname} = true
                         WHERE {code}_accessibility IN ('{appconfig.Accessibility.ACCESSIBLE.value}', '{appconfig.Accessibility.POTENTIAL.value}')
                         AND 
-                        {dbSegmentGradientField} >= {mingradient} 
+                        {dbSegmentGradientField} >= {mingradient}
                         AND 
                         {dbSegmentGradientField} < {maxgradient};
                     
@@ -141,7 +142,7 @@ def computeHabitatModel(connection):
     with connection.cursor() as cursor:
         cursor.execute(query)
         features = cursor.fetchall()
-    
+
         for feature in features:
             code = feature[0]
             name = feature[1]
@@ -159,36 +160,38 @@ def computeHabitatModel(connection):
                     ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} ADD COLUMN IF NOT EXISTS {colname} boolean;
                     
                     UPDATE {dbTargetSchema}.{dbTargetStreamTable} 
-                        SET {colname} = true;
+                        SET {colname} = false;
 
-                    UPDATE {dbTargetSchema}.{dbTargetStreamTable} a
-                    SET {colname} = false
-                    FROM {updateTable} b
-                    WHERE b.stream_id = a.id AND b.habitat_rear_{code} = 'false' AND b.update_type = 'habitat';
+                    UPDATE {dbTargetSchema}.{dbTargetStreamTable} 
+                        SET {colname} = true
+                        WHERE {code}_accessibility IN ('{appconfig.Accessibility.ACCESSIBLE.value}', '{appconfig.Accessibility.POTENTIAL.value}')
+                        AND
+                        {dbSegmentGradientField} >= {mingradient}
+                        AND 
+                        {dbSegmentGradientField} < {maxgradient};
 
                     UPDATE {dbTargetSchema}.{dbTargetStreamTable}
                     SET {colname} = false
                     WHERE {code}_accessibility = '{appconfig.Accessibility.NOT.value}';
-                    
                 """
                 with connection.cursor() as cursor2:
                     cursor2.execute(query)
                 connection.commit()
-            
+
             elif code == 'bt': # brook trout
 
                 query = f"""
                     ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} DROP COLUMN IF EXISTS {colname};
                     ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} ADD COLUMN IF NOT EXISTS {colname} boolean;
                     
-                    UPDATE {dbTargetSchema}.{dbTargetStreamTable} 
+                    UPDATE {dbTargetSchema}.{dbTargetStreamTable}
                         SET {colname} = true;
                     
                 """
                 with connection.cursor() as cursor2:
                     cursor2.execute(query)
                 connection.commit()
-            
+
             elif code == 'ae': # american eel
 
                 query = f"""
@@ -242,11 +245,11 @@ def computeHabitatModel(connection):
     with connection.cursor() as cursor:
         cursor.execute(query)
         features = cursor.fetchall()
-    
+
         for feature in features:
             code = feature[0]
             name = feature[1]
-            
+
             spawning = "habitat_spawn_" + code
             rearing = "habitat_rear_" + code
 
@@ -267,16 +270,16 @@ def computeHabitatModel(connection):
                 cursor2.execute(query)
 
 def main():                            
-    #--- main program ---    
+    #--- main program ---
     with appconfig.connectdb() as conn:
-        
+
         conn.autocommit = False
-        
+
         print("Computing Habitat Models Per Species")
         computeHabitatModel(conn)
-        
+
     print("done")
 
 
 if __name__ == "__main__":
-    main()  
+    main()

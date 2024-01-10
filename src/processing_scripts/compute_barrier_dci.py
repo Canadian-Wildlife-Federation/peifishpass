@@ -53,23 +53,6 @@ def getSpeciesConnectivity(conn, species):
 
     return dci_base
 
-# def calculateStreamDCI(stream, fish, totalhabitat, downpassability):
-
-#     streamDCI = {}
-
-#     length = stream.length
-#     habitat = stream.habitat
-
-#     print(habitat)
-
-#     if habitat[fish]:
-#         streamDCI[fish] = ((length / totalhabitat[fish]) * downpassability[fish]) * 100
-#     else:
-#         streamDCI[fish] = 0
-
-#     print(streamDCI)
-#     return streamDCI
-
 def getBarrierDCI(barrier, barrierData, streamData, species, speciesDCI, totalHabitat):
 
     newStreamArray = []
@@ -192,13 +175,13 @@ def generateBarrierData(conn, species):
             for fish in species:
                 passabilitystatus[fish] = float(0 if barrier[index] is None else barrier[index])
                 index = index + 1
-            
+      
             barrierDict[bid] = BarrierData(bid, passabilitystatus)
 
     return barrierDict
 
 def writeResults(conn, newAllBarrierData, species):
-    
+
     tablestr = ''
     inserttablestr = ''
 
@@ -213,16 +196,18 @@ def writeResults(conn, newAllBarrierData, species):
             barrier_id uuid
             {tablestr}
         );
+
+        ALTER TABLE {dbTargetSchema}.temp OWNER TO cwf_analyst;
     """
     with conn.cursor() as cursor:
         cursor.execute(query)
-    
+
     updatequery = f"""    
         INSERT INTO {dbTargetSchema}.temp VALUES (%s {inserttablestr}) 
     """
 
     newdata = []
-    
+
     for record in newAllBarrierData:
         data = []
         data.append(record.bid)
@@ -249,11 +234,17 @@ def writeResults(conn, newAllBarrierData, species):
         with conn.cursor() as cursor:
             cursor.execute(query)
 
+    query = f"""
+        DROP TABLE IF EXISTS {dbTargetSchema}.temp;
+    """
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+
     conn.commit()
 
 def main():
 
-    print("Started!")
+    print("Calculating barrier DCI values")
     with appconfig.connectdb() as conn:
         conn.autocommit = False
 
@@ -269,7 +260,7 @@ def main():
             for s in spec:
                 species.append(s[0])
 
-        print("species list: ", species)
+        # print("species list: ", species)
         
         speciesDCI = getSpeciesConnectivity(conn, species)
 
@@ -282,7 +273,7 @@ def main():
         newAllBarrierData = []
 
         for barrierid in barrierData:
-            print("barrier id:", barrierid, "object:", barrierData[barrierid])
+            # print("barrier id:", barrierid, "object:", barrierData[barrierid])
             dci = getBarrierDCI(barrierData[barrierid], barrierData, streamData, species, speciesDCI, totalHabitat)
             newBarrierData = BarrierData(barrierData[barrierid].bid, barrierData[barrierid].passabilitystatus)
             newBarrierData.dci = dci

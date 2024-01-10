@@ -1,6 +1,6 @@
 #----------------------------------------------------------------------------------
 #
-# Copyright 2022 by Canadian Wildlife Federation, Alberta Environment and Parks
+# Copyright 2023 by Canadian Wildlife Federation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -50,6 +50,8 @@ def main():
 
             primary key (watershed_id)
         );
+
+        ALTER TABLE {appconfig.dataSchema}.{statTable} OWNER TO cwf_analyst;
     """
     with appconfig.connectdb() as connection:
         with connection.cursor() as cursor:

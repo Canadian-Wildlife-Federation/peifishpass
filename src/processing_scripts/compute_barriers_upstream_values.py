@@ -1,6 +1,6 @@
 #----------------------------------------------------------------------------------
 #
-# Copyright 2022 by Canadian Wildlife Federation, Alberta Environment and Parks
+# Copyright 2023 by Canadian Wildlife Federation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -453,6 +453,8 @@ def writeResults(connection):
             stream_id uuid
             {tablestr}
         );
+
+        ALTER TABLE {dbTargetSchema}.temp OWNER TO cwf_analyst;
     """
     with connection.cursor() as cursor:
         cursor.execute(query)

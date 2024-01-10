@@ -1,6 +1,6 @@
 #----------------------------------------------------------------------------------
 #
-# Copyright 2022 by Canadian Wildlife Federation, Alberta Environment and Parks
+# Copyright 2023 by Canadian Wildlife Federation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -298,13 +298,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()      
-#drop table working.points3d; 
-#
-#create table working.points3d as 
-#select geom, st_z(geom) as z
-#from (
-#  SELECT (ST_DumpPoints(geometry_raw3d)).geom  AS geom
-#  FROM working.stream3d
-#) foo
-    
+    main()

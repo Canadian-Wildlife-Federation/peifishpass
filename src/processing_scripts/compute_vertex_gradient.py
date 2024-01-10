@@ -1,6 +1,6 @@
 #----------------------------------------------------------------------------------
 #
-# Copyright 2022 by Canadian Wildlife Federation, Alberta Environment and Parks
+# Copyright 2023 by Canadian Wildlife Federation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -85,8 +85,9 @@ def computeVertexGradients(connection):
         INNER JOIN {dbTargetSchema}.{dbTargetStreamTable} s2 ON sv.{dbMainstemField} = s2.{dbMainstemField} 
           AND sv.{dbDownMeasureField} + 100 >= s2.{dbDownMeasureField} 
           AND sv.{dbDownMeasureField} + 100 < s2.{dbUpMeasureField};
-          
 
+        ALTER TABLE {dbTargetSchema}.{dbVertexTable} OWNER TO cwf_analyst;
+          
         DELETE FROM {dbTargetSchema}.{dbVertexTable} WHERE elevation_a = -999999 or elevation_b = -999999;
         
         ALTER TABLE {dbTargetSchema}.{dbVertexTable} ADD COLUMN grade_class smallint;

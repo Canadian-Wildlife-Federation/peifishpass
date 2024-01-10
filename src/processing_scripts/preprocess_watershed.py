@@ -1,6 +1,6 @@
 #----------------------------------------------------------------------------------
 #
-# Copyright 2022 by Canadian Wildlife Federation, Alberta Environment and Parks
+# Copyright 2023 by Canadian Wildlife Federation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -45,6 +45,8 @@ def main():
               geometry geometry(LineString, {appconfig.dataSrid}),
               primary key ({appconfig.dbIdField})
             );
+
+            ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} OWNER TO cwf_analyst;
             
             CREATE INDEX {dbTargetSchema}_{dbTargetStreamTable}_geometry_idx ON {dbTargetSchema}.{dbTargetStreamTable} using gist(geometry);
             

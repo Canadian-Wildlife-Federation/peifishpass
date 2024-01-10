@@ -1,6 +1,6 @@
 #----------------------------------------------------------------------------------
 #
-# Copyright 2022 by Canadian Wildlife Federation, Alberta Environment and Parks
+# Copyright 2023 by Canadian Wildlife Federation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -69,6 +69,8 @@ def main():
                 rear_channel_confinement_min numeric,
                 rear_channel_confinement_max numeric
                 );
+
+            ALTER TABLE {appconfig.dataSchema}.{appconfig.fishSpeciesTable} OWNER TO cwf_analyst;
             """
         with conn.cursor() as cursor:
             cursor.execute(query)

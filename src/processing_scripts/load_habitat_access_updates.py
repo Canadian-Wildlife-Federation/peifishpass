@@ -1,6 +1,6 @@
 #----------------------------------------------------------------------------------
 #
-# Copyright 2022 by Canadian Wildlife Federation, Alberta Environment and Parks
+# Copyright 2023 by Canadian Wildlife Federation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ dbTargetSchema = appconfig.config[iniSection]['output_schema']
 dbTargetStreamTable = appconfig.config['PROCESSING']['stream_table']
 file = appconfig.config[iniSection]['habitat_access_updates']
 
-datatable = "habitat_access_updates"
+dataTable = "habitat_access_updates"
 
 snapDistance = appconfig.config['CABD_DATABASE']['snap_distance']
 
@@ -36,7 +36,7 @@ def main():
 
     with appconfig.connectdb() as conn:
 
-        query = f"""DROP TABLE IF EXISTS {dbTargetSchema}.{datatable};"""
+        query = f"""DROP TABLE IF EXISTS {dbTargetSchema}.{dataTable};"""
         with conn.cursor() as cursor:
             cursor.execute(query)
         conn.commit()
@@ -44,60 +44,36 @@ def main():
         print("Loading habitat and accessibility updates")
         layer = "hab_access_updates"
         orgDb="dbname='" + appconfig.dbName + "' host='"+ appconfig.dbHost+"' port='"+appconfig.dbPort+"' user='"+appconfig.dbUser+"' password='"+ appconfig.dbPassword+"'"
-        pycmd = '"' + appconfig.ogr + '" -overwrite -f "PostgreSQL" PG:"' + orgDb + '" -t_srs EPSG:' + appconfig.dataSrid + ' -nlt CONVERT_TO_LINEAR  -nln "' + dbTargetSchema + '.' + datatable + '" -lco GEOMETRY_NAME=geometry "' + file + '" ' + layer
-        #print(pycmd)
+        pycmd = '"' + appconfig.ogr + '" -overwrite -f "PostgreSQL" PG:"' + orgDb + '" -t_srs EPSG:' + appconfig.dataSrid + ' -nlt CONVERT_TO_LINEAR  -nln "' + dbTargetSchema + '.' + dataTable + '" -lco GEOMETRY_NAME=geometry "' + file + '" ' + layer
         subprocess.run(pycmd)
-        
+
         query = f"""
 
-        ALTER TABLE {dbTargetSchema}.{datatable} add column id uuid;
-        UPDATE {dbTargetSchema}.{datatable} set id = gen_random_uuid();
+        ALTER TABLE {dbTargetSchema}.{dataTable} add column id uuid;
+        UPDATE {dbTargetSchema}.{dataTable} set id = gen_random_uuid();
         
-        ALTER TABLE {dbTargetSchema}.{datatable} add column snapped_point geometry(POINT, {appconfig.dataSrid});
+        ALTER TABLE {dbTargetSchema}.{dataTable} add column snapped_point geometry(POINT, {appconfig.dataSrid});
         
-        SELECT public.snap_to_network('{dbTargetSchema}', '{datatable}', 'geometry', 'snapped_point', '{snapDistance}');
+        SELECT public.snap_to_network('{dbTargetSchema}', '{dataTable}', 'geometry', 'snapped_point', '{snapDistance}');
 
-        CREATE INDEX {datatable}_snapped_point_idx ON {dbTargetSchema}.{datatable} USING gist (snapped_point);
+        CREATE INDEX {dataTable}_snapped_point_idx ON {dbTargetSchema}.{dataTable} USING gist (snapped_point);
         
-        ALTER TABLE {dbTargetSchema}.{datatable} add column stream_id uuid;
-        ALTER TABLE {dbTargetSchema}.{datatable} add column stream_measure numeric;
+        ALTER TABLE {dbTargetSchema}.{dataTable} add column stream_id uuid;
+        ALTER TABLE {dbTargetSchema}.{dataTable} add column stream_measure numeric;
         
         with match as (
         SELECT a.id as stream_id, b.id as pntid, st_linelocatepoint(a.geometry, b.snapped_point) as streammeasure
-        FROM {dbTargetSchema}.{dbTargetStreamTable} a, {dbTargetSchema}.{datatable} b
+        FROM {dbTargetSchema}.{dbTargetStreamTable} a, {dbTargetSchema}.{dataTable} b
         WHERE st_intersects(a.geometry, st_buffer(b.snapped_point, 0.0001))
         )
-        UPDATE {dbTargetSchema}.{datatable}
+        UPDATE {dbTargetSchema}.{dataTable}
         SET stream_id = a.stream_id, stream_measure = a.streammeasure
-        FROM match a WHERE a.pntid = {dbTargetSchema}.{datatable}.id;
-
+        FROM match a WHERE a.pntid = {dbTargetSchema}.{dataTable}.id;
         """
 
         with conn.cursor() as cursor:
             cursor.execute(query)
         conn.commit()
-
-        # add comments to stream table
-        query = f"""
-            ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} DROP COLUMN IF EXISTS "comments";
-            ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} DROP COLUMN IF EXISTS "comments_source";
-            ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} ADD COLUMN "comments" varchar;
-            ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} ADD COLUMN "comments_source" varchar;
-
-            UPDATE {dbTargetSchema}.{dbTargetStreamTable} a
-            SET
-                "comments" = b.comments,
-                comments_source = b.update_source
-            FROM {dbTargetSchema}.{datatable} b
-            WHERE b.stream_id = a.id
-            AND b.update_type = 'comment';
-        """
-
-        with conn.cursor() as cursor:
-            cursor.execute(query)
-        conn.commit()
-
-    print("Loading habitat and accessibility updates complete")
 
 if __name__ == "__main__":
     main()
