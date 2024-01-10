@@ -45,6 +45,8 @@ def main():
               geometry geometry(LineString, {appconfig.dataSrid}),
               primary key ({appconfig.dbIdField})
             );
+
+            ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} OWNER TO cwf_analyst;
             
             CREATE INDEX {dbTargetSchema}_{dbTargetStreamTable}_geometry_idx ON {dbTargetSchema}.{dbTargetStreamTable} using gist(geometry);
             

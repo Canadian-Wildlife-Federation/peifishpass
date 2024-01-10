@@ -77,6 +77,8 @@ def createTable(connection):
             DROP TABLE IF EXISTS {dbTargetSchema}.{dbModelledCrossingsTable}_archive;
             CREATE TABLE {dbTargetSchema}.{dbModelledCrossingsTable}_archive 
             AS SELECT * FROM {dbTargetSchema}.{dbModelledCrossingsTable};
+
+            ALTER TABLE {dbTargetSchema}.{dbModelledCrossingsTable}_archive OWNER TO cwf_analyst;
             
             DROP TABLE IF EXISTS {dbTargetSchema}.{dbModelledCrossingsTable};
             
@@ -96,18 +98,20 @@ def createTable(connection):
                 
                 primary key (modelled_id)
             );
+
+            ALTER TABLE {dbTargetSchema}.{dbModelledCrossingsTable} OWNER TO cwf_analyst;
             
         """
-    
+
         with connection.cursor() as cursor:
             cursor.execute(query)
-        
+
         # add species-specific passability fields
         for species in specCodes:
             code = species[0]
 
             colname = "passability_status_" + code
-            
+
             query = f"""
                 alter table {dbTargetSchema}.{dbModelledCrossingsTable} 
                 add column if not exists {colname} numeric;
@@ -115,7 +119,7 @@ def createTable(connection):
 
             with connection.cursor() as cursor:
                 cursor.execute(query)
-    
+
     else:
         query = f"""
             DROP TABLE IF EXISTS {dbTargetSchema}.{dbModelledCrossingsTable};
@@ -136,18 +140,20 @@ def createTable(connection):
                 
                 primary key (modelled_id)
             );
+
+            ALTER TABLE {dbTargetSchema}.{dbModelledCrossingsTable} OWNER TO cwf_analyst;
             
         """
-    
+
         with connection.cursor() as cursor:
             cursor.execute(query)
 
-        # add species-specific passability fields 
+        # add species-specific passability fields
         for species in specCodes:
             code = species[0]
 
             colname = "passability_status_" + code
-            
+
             query = f"""
                 alter table {dbTargetSchema}.{dbModelledCrossingsTable} 
                 add column if not exists {colname} numeric;

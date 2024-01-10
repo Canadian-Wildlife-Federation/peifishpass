@@ -74,6 +74,8 @@ def breakstreams(conn):
             type varchar,
             {colString} numeric
             );
+
+        ALTER TABLE {dbTargetSchema}.{dbGradientBarrierTable} OWNER TO cwf_analyst;
     
         -- barriers
         INSERT INTO {dbTargetSchema}.{dbGradientBarrierTable} (point, id, type, {colStringSimple}) 

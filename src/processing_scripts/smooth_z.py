@@ -298,13 +298,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()      
-#drop table working.points3d; 
-#
-#create table working.points3d as 
-#select geom, st_z(geom) as z
-#from (
-#  SELECT (ST_DumpPoints(geometry_raw3d)).geom  AS geom
-#  FROM working.stream3d
-#) foo
-    
+    main()

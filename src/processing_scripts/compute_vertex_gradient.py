@@ -85,8 +85,9 @@ def computeVertexGradients(connection):
         INNER JOIN {dbTargetSchema}.{dbTargetStreamTable} s2 ON sv.{dbMainstemField} = s2.{dbMainstemField} 
           AND sv.{dbDownMeasureField} + 100 >= s2.{dbDownMeasureField} 
           AND sv.{dbDownMeasureField} + 100 < s2.{dbUpMeasureField};
-          
 
+        ALTER TABLE {dbTargetSchema}.{dbVertexTable} OWNER TO cwf_analyst;
+          
         DELETE FROM {dbTargetSchema}.{dbVertexTable} WHERE elevation_a = -999999 or elevation_b = -999999;
         
         ALTER TABLE {dbTargetSchema}.{dbVertexTable} ADD COLUMN grade_class smallint;

@@ -95,6 +95,8 @@ def main():
 
                 primary key (id)
             );
+        
+        ALTER TABLE {dbTargetSchema}.{dbBarrierTable} OWNER TO cwf_analyst;
             
         """
         with conn.cursor() as cursor:

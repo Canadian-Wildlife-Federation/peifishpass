@@ -175,13 +175,13 @@ def generateBarrierData(conn, species):
             for fish in species:
                 passabilitystatus[fish] = float(0 if barrier[index] is None else barrier[index])
                 index = index + 1
-            
+      
             barrierDict[bid] = BarrierData(bid, passabilitystatus)
 
     return barrierDict
 
 def writeResults(conn, newAllBarrierData, species):
-    
+
     tablestr = ''
     inserttablestr = ''
 
@@ -196,16 +196,18 @@ def writeResults(conn, newAllBarrierData, species):
             barrier_id uuid
             {tablestr}
         );
+
+        ALTER TABLE {dbTargetSchema}.temp OWNER TO cwf_analyst;
     """
     with conn.cursor() as cursor:
         cursor.execute(query)
-    
+
     updatequery = f"""    
         INSERT INTO {dbTargetSchema}.temp VALUES (%s {inserttablestr}) 
     """
 
     newdata = []
-    
+
     for record in newAllBarrierData:
         data = []
         data.append(record.bid)

@@ -84,6 +84,8 @@ query = f"""
         primary key(id)
     );
 
+    ALTER TABLE {appconfig.dataSchema}.{appconfig.streamTable} OWNER TO cwf_analyst;
+
     create index {appconfig.streamTable}_geom2d_idx on {appconfig.dataSchema}.{appconfig.streamTable} using gist(geometry);
     
     create table {appconfig.dataSchema}.{roadTable} ( 
@@ -93,6 +95,8 @@ query = f"""
         primary key(id)
     );
     create index {roadTable}_geom_idx on {appconfig.dataSchema}.{roadTable} using gist(geometry);
+
+    ALTER TABLE {appconfig.dataSchema}.{roadTable} OWNER TO cwf_analyst;
     
     create table {appconfig.dataSchema}.{trailTable} ( 
         id uuid not null,
@@ -103,6 +107,8 @@ query = f"""
         primary key(id)
     );
     create index {trailTable}_geom_idx on {appconfig.dataSchema}.{trailTable} using gist(geometry);
+
+    ALTER TABLE {appconfig.dataSchema}.{trailTable} OWNER TO cwf_analyst;
     
 """
 
@@ -110,5 +116,5 @@ with appconfig.connectdb() as conn:
     with conn.cursor() as cursor:
         cursor.execute(query)
 
-print (f"""Database schema {appconfig.dataSchema} created and ready for data """)    
+print (f"""Database schema {appconfig.dataSchema} created and ready for data """)
     
