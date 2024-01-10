@@ -277,6 +277,53 @@ def processUpdates(specCodes, connection):
         cursor.execute(query)
     connection.commit()
 
+def tableExists(conn):
+
+    query = f"""
+    SELECT EXISTS(SELECT 1 FROM information_schema.tables 
+    WHERE table_catalog='{appconfig.dbName}' AND 
+        table_schema='{dbTargetSchema}' AND 
+        table_name='{dbBarrierTable}_archive');
+    """
+
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        result = cursor.fetchone()
+        result = result[0]
+
+    return result
+
+def matchArchive(conn):
+
+    query = f"""
+        WITH matched AS (
+            SELECT
+            a.id,
+            nn.id as archive_id,
+            nn.dist
+            FROM {dbTargetSchema}.{dbBarrierTable} a
+            CROSS JOIN LATERAL
+            (SELECT
+            id,
+            ST_Distance(a.snapped_point, b.snapped_point) as dist
+            FROM {dbTargetSchema}.{dbBarrierTable}_archive b
+            ORDER BY a.snapped_point <-> b.snapped_point
+            LIMIT 1) as nn
+            WHERE nn.dist < 10
+        )
+
+        UPDATE {dbTargetSchema}.{dbBarrierTable} a
+            SET id = m.archive_id
+            FROM matched m
+            WHERE m.id = a.id;
+
+        --DROP TABLE {dbTargetSchema}.{dbBarrierTable}_archive;
+
+    """
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+    conn.commit()
+
 #--- main program ---
 def main():
 
@@ -300,6 +347,12 @@ def main():
 
         print("  processing updates")
         processUpdates(specCodes, conn)
+
+        result = tableExists(conn)
+
+        if result:
+
+            matchArchive(conn)
 
     print("done")
 

@@ -251,21 +251,21 @@ def matchArchive(connection):
         cursor.execute(query)
 
 def computeAttributes(connection):
-    
+
     #assign all modelled crossings a crossing_status and passability_status
-    
+
     query = f"""
         UPDATE {dbTargetSchema}.{dbModelledCrossingsTable}
         SET crossing_status = 'MODELLED';
     """
     with connection.cursor() as cursor:
         cursor.execute(query)
-    
+
     for species in specCodes:
         code = species[0]
 
         colname = "passability_status_" + code
-            
+
         query = f"""
             UPDATE {dbTargetSchema}.{dbModelledCrossingsTable}
             SET {colname} = 0 WHERE {colname} IS NULL;
@@ -283,7 +283,7 @@ def loadToBarriers(connection):
 
         col = "passability_status_" + code
         newCols.append(col)
-    
+
     colString = ','.join(newCols)
 
     query = f"""
@@ -313,12 +313,12 @@ def loadToBarriers(connection):
         cursor.execute(query)
     connection.commit()
 
-def main():                        
-    #--- main program ---    
+def main():
+    #--- main program ---
     with appconfig.connectdb() as conn:
-        
+
         conn.autocommit = False
-        
+
         print("Computing Modelled Crossings")
 
         tableExists(conn)
@@ -329,7 +329,7 @@ def main():
 
             print("  creating tables")
             createTable(conn)
-            
+
             print("  computing modelled crossings")
             computeCrossings(conn)
 
