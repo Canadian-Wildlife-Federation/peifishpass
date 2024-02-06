@@ -91,6 +91,7 @@ query = f"""
     create table {appconfig.dataSchema}.{roadTable} ( 
         id uuid not null,
         name varchar,
+        wshed_name varchar,
         geometry geometry(geometry, {appconfig.dataSrid}) not null,
         primary key(id)
     );
@@ -101,6 +102,7 @@ query = f"""
     create table {appconfig.dataSchema}.{trailTable} ( 
         id uuid not null,
         name varchar,
+        wshed_name varchar,
         status varchar(100),
         zone varchar(100),
         geometry geometry(geometry, {appconfig.dataSrid}) not null,

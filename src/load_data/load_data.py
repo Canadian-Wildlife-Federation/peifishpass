@@ -39,17 +39,15 @@ with appconfig.connectdb() as conn:
     datatable = appconfig.dataSchema + "." + watershedTable
     orgDb="dbname='" + appconfig.dbName + "' host='"+ appconfig.dbHost+"' port='"+appconfig.dbPort+"' user='"+appconfig.dbUser+"' password='"+ appconfig.dbPassword+"'"
     pycmd = '"' + appconfig.ogr + '" -overwrite -f "PostgreSQL" PG:"' + orgDb + '" -t_srs EPSG:' + appconfig.dataSrid + ' -nlt geometry -nln "' + datatable + '" -nlt CONVERT_TO_LINEAR -lco GEOMETRY_NAME=geometry "' + watershedfile + '" ' + layer
-    #print(pycmd)
     subprocess.run(pycmd)
-    
+
     print("Loading Streams")
     layer = "stream"
     datatable = appconfig.dataSchema + "." + streamTable
     orgDb="dbname='" + appconfig.dbName + "' host='"+ appconfig.dbHost+"' port='"+appconfig.dbPort+"' user='"+appconfig.dbUser+"' password='"+ appconfig.dbPassword+"'"
     pycmd = '"' + appconfig.ogr + '" -overwrite -f "PostgreSQL" PG:"' + orgDb + '" -t_srs EPSG:' + appconfig.dataSrid + ' -nln "' + temptable + '" -lco GEOMETRY_NAME=geometry "' + file + '" ' + layer
-    print(pycmd)
     subprocess.run(pycmd)
-    
+
     query = f"""
     TRUNCATE TABLE {datatable};
 
@@ -151,7 +149,7 @@ with appconfig.connectdb() as conn:
     
     DROP table {temptable};
     """
-    
+
     with conn.cursor() as cursor:
         cursor.execute(query)
     conn.commit()
@@ -162,9 +160,8 @@ with appconfig.connectdb() as conn:
     wshedtable = appconfig.dataSchema + "." + watershedTable
     orgDb="dbname='" + appconfig.dbName + "' host='"+ appconfig.dbHost+"' port='"+appconfig.dbPort+"' user='"+appconfig.dbUser+"' password='"+ appconfig.dbPassword+"'"
     pycmd = '"' + appconfig.ogr + '" -overwrite -f "PostgreSQL" PG:"' + orgDb + '" -t_srs EPSG:' + appconfig.dataSrid + ' -nlt CONVERT_TO_LINEAR  -nln "' + temptable + '" -lco GEOMETRY_NAME=geometry "' + file + '" ' + layer
-    #print(pycmd)
     subprocess.run(pycmd)
-    
+
     query = f"""
     TRUNCATE TABLE {datatable};
 
@@ -187,21 +184,23 @@ with appconfig.connectdb() as conn:
     UPDATE {datatable} SET name = NULL WHERE name = 'Placemark';
     UPDATE {datatable} SET name = NULL WHERE length(trim(name)) = 0;
     UPDATE {datatable} SET name = trim(name);
+
+    ALTER TABLE {datatable} ADD COLUMN IF NOT EXISTS wshed_name varchar;
+    UPDATE {datatable} t1 SET wshed_name = t2.name FROM {wshedtable} t2 WHERE ST_Contains(t2.geometry, t1.geometry);
     
     DROP table {temptable};
     """
-    
+
     with conn.cursor() as cursor:
         cursor.execute(query)
     conn.commit()
-    
+
     print("Loading Trails")
     layer = "trail"
     datatable = appconfig.dataSchema + "." + trailTable
     wshedtable = appconfig.dataSchema + "." + watershedTable
     orgDb="dbname='" + appconfig.dbName + "' host='"+ appconfig.dbHost+"' port='"+appconfig.dbPort+"' user='"+appconfig.dbUser+"' password='"+ appconfig.dbPassword+"'"
     pycmd = '"' + appconfig.ogr + '" -overwrite -f "PostgreSQL" PG:"' + orgDb + '" -t_srs EPSG:' + appconfig.dataSrid + ' -nlt geometry -nln "' + temptable + '" -nlt CONVERT_TO_LINEAR -nlt PROMOTE_TO_MULTI -lco GEOMETRY_NAME=geometry "' + file + '" ' + layer
-    #print(pycmd)
     subprocess.run(pycmd)
     query = f"""
     TRUNCATE TABLE {datatable};
@@ -227,10 +226,12 @@ with appconfig.connectdb() as conn:
     {temptable} t1
     JOIN {wshedtable} t2 ON ST_Intersects(t1.geometry, t2.geometry);
 
-    DROP table {temptable};
+    ALTER TABLE {datatable} ADD COLUMN IF NOT EXISTS wshed_name varchar;
+    UPDATE {datatable} t1 SET wshed_name = t2.name FROM {wshedtable} t2 WHERE ST_Contains(t2.geometry, t1.geometry);
 
+    DROP table {temptable};
     """
-    
+
     with conn.cursor() as cursor:
         cursor.execute(query)
     conn.commit()

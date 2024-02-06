@@ -241,11 +241,11 @@ def breakstreams(conn):
         CREATE INDEX smooth_geom_idx ON {dbTargetSchema}.{dbTargetStreamTable} USING gist({dbTargetGeom});
         
         DROP TABLE newstreamlines;
+
+        UPDATE {dbTargetSchema}.{dbTargetStreamTable} b SET wshed_name = a.name FROM {appconfig.dataSchema}.{appconfig.watershedTable} a WHERE st_intersects(b.geometry, a.geometry);
     
     """
-        
-    #print(query)
-        
+
     with conn.cursor() as cursor:
         cursor.execute(query)
     conn.commit()

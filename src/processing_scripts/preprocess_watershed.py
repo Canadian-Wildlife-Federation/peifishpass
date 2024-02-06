@@ -29,7 +29,7 @@ watershedTable = appconfig.config['CREATE_LOAD_SCRIPT']['watershed_table']
 
 def main():
     with appconfig.connectdb() as conn:
-        
+
         query = f"""
             CREATE SCHEMA IF NOT EXISTS {dbTargetSchema};
         
@@ -39,6 +39,7 @@ def main():
               {appconfig.dbIdField} uuid not null,
               source_id uuid not null,
               {appconfig.dbWatershedIdField} varchar not null,
+              wshed_name varchar (100),
               stream_name varchar,
               strahler_order integer,
               segment_length double precision,
@@ -59,7 +60,7 @@ def main():
                 ({appconfig.dbIdField}, source_id,
                 {appconfig.dbWatershedIdField}, 
                 stream_name, strahler_order, geometry)
-            SELECT gen_random_uuid(), id,
+            SELECT gen_random_uuid(), t1.id,
                 aoi_id,
                 stream_name, strahler_order,
                 CASE
@@ -72,28 +73,23 @@ def main():
             WHERE aoi_id = '{workingWatershedId}'
             AND strahler_order IS NOT NULL;
 
-            -------------------------
-            UPDATE {dbTargetSchema}.{dbTargetStreamTable} set segment_length = st_length2d(geometry) / 1000.0;
-            ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} add column geometry_original geometry(LineString, {appconfig.dataSrid});
-            update {dbTargetSchema}.{dbTargetStreamTable} set geometry_original = geometry;
-            update {dbTargetSchema}.{dbTargetStreamTable} set geometry = st_snaptogrid(geometry, 0.01);
-            -------------------------
-            
+            UPDATE {dbTargetSchema}.{dbTargetStreamTable} SET segment_length = st_length2d(geometry) / 1000.0;
+            ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} ADD COLUMN geometry_original geometry(LineString, {appconfig.dataSrid});
+            UPDATE {dbTargetSchema}.{dbTargetStreamTable} SET geometry_original = geometry;
+            UPDATE {dbTargetSchema}.{dbTargetStreamTable} SET geometry = st_snaptogrid(geometry, 0.01);
+            UPDATE {dbTargetSchema}.{dbTargetStreamTable} b SET wshed_name = a.name FROM {appconfig.dataSchema}.{appconfig.watershedTable} a WHERE st_intersects(b.geometry, a.geometry);
+
             --TODO: remove this when values are provided
             ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} add column {appconfig.streamTableChannelConfinementField} numeric;
             ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} add column {appconfig.streamTableDischargeField} numeric;
-            
             UPDATE {dbTargetSchema}.{dbTargetStreamTable} set {appconfig.streamTableChannelConfinementField} = floor(random() * 100);
             UPDATE {dbTargetSchema}.{dbTargetStreamTable} set {appconfig.streamTableDischargeField} = floor(random() * 100);
-            
-       
         """
-        # print(query)
         with conn.cursor() as cursor:
             cursor.execute(query)
         conn.commit()
-        
+
     print(f"""Initializing processing for watershed {workingWatershedId} complete.""")
 
 if __name__ == "__main__":
-    main()     
+    main()

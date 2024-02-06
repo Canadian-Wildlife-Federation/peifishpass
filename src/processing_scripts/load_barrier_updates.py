@@ -296,6 +296,8 @@ def tableExists(conn):
 def matchArchive(conn):
 
     query = f"""
+        ALTER TABLE {dbTargetSchema}.{dbBarrierTable} DROP CONSTRAINT barriers_pkey;
+        
         WITH matched AS (
             SELECT
             a.id,
@@ -317,7 +319,9 @@ def matchArchive(conn):
             FROM matched m
             WHERE m.id = a.id;
 
-        --DROP TABLE {dbTargetSchema}.{dbBarrierTable}_archive;
+        DROP TABLE {dbTargetSchema}.{dbBarrierTable}_archive;
+
+        ALTER TABLE {dbTargetSchema}.{dbBarrierTable} ADD PRIMARY KEY (id);
 
     """
     with conn.cursor() as cursor:
