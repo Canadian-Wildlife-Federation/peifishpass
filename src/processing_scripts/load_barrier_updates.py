@@ -62,6 +62,15 @@ def loadBarrierUpdates(specCodes, connection):
         cursor.execute(query)
     connection.commit()
 
+    ## Remove beaver activity from model. Remove them from update table.
+    query = f"""
+        DELETE FROM {dbTargetSchema}.{dbTargetTable} WHERE barrier_type = 'beaver_activity';
+    """
+
+    with connection.cursor() as cursor:
+        cursor.execute(query)
+    connection.commit()
+
     for species in specCodes:
         code = species[0]
         colname = "passability_status_" + code
@@ -75,7 +84,6 @@ def joinBarrierUpdates(connection):
 
     query = f"""
         ALTER TABLE {dbTargetSchema}.{dbTargetTable} ADD COLUMN IF NOT EXISTS barrier_id uuid;
-
         SELECT public.snap_to_network('{dbTargetSchema}', '{dbBarrierTable}', 'original_point', 'snapped_point', '{snapDistance}');
         UPDATE {dbTargetSchema}.{dbBarrierTable} SET snapped_point = original_point WHERE snapped_point IS NULL;
     """
