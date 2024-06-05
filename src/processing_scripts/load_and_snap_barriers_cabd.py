@@ -329,8 +329,8 @@ def main():
         print("  fetching barriers from CABD")
         getCABD(conn)
 
-        print("  loading beaver activity data")
-        getBeaverData(conn)
+        # print("  loading beaver activity data")
+        # getBeaverData(conn)
 
         print("  adding passability status")
         addPassability(conn, specCodes)

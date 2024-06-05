@@ -86,7 +86,7 @@ Currently processing includes:
 
 **Main Script**
 
-process_watershed.py -c config.ini [watershedid] -user [username] -password [password]
+process_watershed.py -c config.ini [watershedid]
 
 The watershedid field must be specified as a section header in the config.ini file. The section must describe the watershed processing details for example:
 
