@@ -31,6 +31,7 @@ iniSection = appconfig.args.args[0]
 dbTargetSchema = appconfig.config[iniSection]['output_schema']
 watershed_id = appconfig.config[iniSection]['watershed_id']
 dbTargetStreamTable = appconfig.config['PROCESSING']['stream_table']
+dbPassabilityTable = appconfig.config['BARRIER_PROCESSING']['passability_table']
 
 dbBarrierTable = appconfig.config['BARRIER_PROCESSING']['barrier_table']
 
@@ -197,8 +198,14 @@ def createNetwork(connection):
 
                 for barrier in edge.downbarriers[fish]:
                     query = f"""
-                    SELECT passability_status_{fish} FROM {dbTargetSchema}.{dbBarrierTable} WHERE id = '{barrier}';
+                    SELECT passability_status 
+                    FROM {dbTargetSchema}.{dbPassabilityTable} p
+                    JOIN {dbTargetSchema}.fish_species s
+                        ON p.species_id = s.id
+                    WHERE p.barrier_id = '{barrier}'
+                    AND s.code = '{fish}'
                     """
+
                     with connection.cursor() as cursor2:
                         cursor2.execute(query)
                         status = cursor2.fetchone()
@@ -471,21 +478,21 @@ def writeResults(connection):
         data = []
         data.append(edge.fid)
         for fish in species:
-            data.append (edge.specaup[fish])
-            data.append (edge.spawn_habitatup[fish])
-            data.append (edge.rear_habitatup[fish])
-            data.append (edge.habitatup[fish])
-            data.append (edge.spawn_funchabitatup[fish])
-            data.append (edge.rear_funchabitatup[fish])
-            data.append (edge.funchabitatup[fish])
-            data.append (edge.dci[fish])
+            data.append (float(edge.specaup[fish]))
+            data.append (float(edge.spawn_habitatup[fish]))
+            data.append (float(edge.rear_habitatup[fish]))
+            data.append (float(edge.habitatup[fish]))
+            data.append (float(edge.spawn_funchabitatup[fish]))
+            data.append (float(edge.rear_funchabitatup[fish]))
+            data.append (float(edge.funchabitatup[fish]))
+            data.append (float(edge.dci[fish]))
         
-        data.append(edge.spawn_habitatup_all)
-        data.append(edge.rear_habitatup_all)
-        data.append(edge.habitatup_all)
-        data.append(edge.spawn_funchabitatup_all)
-        data.append(edge.rear_funchabitatup_all)
-        data.append(edge.funchabitatup_all)
+        data.append(float(edge.spawn_habitatup_all))
+        data.append(float(edge.rear_habitatup_all))
+        data.append(float(edge.habitatup_all))
+        data.append(float(edge.spawn_funchabitatup_all))
+        data.append(float(edge.rear_funchabitatup_all))
+        data.append(float(edge.funchabitatup_all))
 
         newdata.append( data )
 

@@ -34,9 +34,12 @@ dbTempTable = 'beaver_activity_' + dbWatershedId
 dbTargetStreamTable = appconfig.config['PROCESSING']['stream_table']
 workingWatershedId = appconfig.config[iniSection]['watershed_id']
 nhnWatershedId = appconfig.config[iniSection]['nhn_watershed_id']
+fishSpeciesTable = appconfig.config['DATABASE']['fish_species_table']
 
 dbBarrierTable = appconfig.config['BARRIER_PROCESSING']['barrier_table']
+dbPassabilityTable = appconfig.config['BARRIER_PROCESSING']['passability_table']
 snapDistance = appconfig.config['CABD_DATABASE']['snap_distance']
+dbRawDataSchema = appconfig.config['DATABASE']['data_schema']
 
 def tableExists(conn):
 
@@ -55,6 +58,35 @@ def tableExists(conn):
     return result
 
 def createTable(conn):
+
+    with appconfig.connectdb() as conn:
+
+
+        query = f""" DROP VIEW IF EXISTS {dbTargetSchema}.barrier_passability_view; """
+        with conn.cursor() as cursor:
+            cursor.execute(query)
+        conn.commit()
+
+        # create fish species table
+        query = f"""
+            DROP TABLE IF EXISTS {dbTargetSchema}.fish_species;
+            
+            CREATE TABLE IF NOT EXISTS {dbTargetSchema}.fish_species (
+                id uuid not null default gen_random_uuid()
+                ,code varchar(32)
+                ,common_name varchar(128)
+                
+                ,primary key (id)
+            );
+
+            INSERT INTO {dbTargetSchema}.fish_species (code, common_name)
+            SELECT code, name FROM {appconfig.dataSchema}.{fishSpeciesTable};
+
+            ALTER TABLE {dbTargetSchema}.fish_species OWNER TO cwf_analyst;
+        """
+
+        with conn.cursor() as cursor:
+            cursor.execute(query)
 
     result = tableExists(conn)
 
@@ -87,6 +119,8 @@ def createTable(conn):
             passability_status_notes varchar,
 
             dam_use varchar,
+
+            fall_height_m real,
 
             stream_name varchar,
             strahler_order integer,
@@ -137,6 +171,8 @@ def createTable(conn):
 
                 dam_use varchar,
 
+                fall_height_m real,
+
                 stream_name varchar,
                 strahler_order integer,
                 stream_id uuid,
@@ -164,6 +200,25 @@ def createTable(conn):
         with conn.cursor() as cursor:
             cursor.execute(query)
         conn.commit()
+
+    # create passability table
+    query = f"""
+        DROP TABLE IF EXISTS {dbTargetSchema}.{dbPassabilityTable};
+        
+        CREATE TABLE IF NOT EXISTS {dbTargetSchema}.{dbPassabilityTable} (
+            barrier_id uuid
+            ,species_id uuid
+            ,species_code varchar
+            ,passability_status varchar
+            ,passability_status_notes varchar
+        );
+
+        ALTER TABLE {dbTargetSchema}.{dbPassabilityTable} OWNER TO cwf_analyst;
+    """
+
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+    conn.commit()
 
 def getCABD(conn):
 
@@ -196,6 +251,40 @@ def getCABD(conn):
             passability_status,
             type)
         VALUES (%s, ST_Transform(ST_GeomFromText('POINT(%s %s)',4617),{appconfig.dataSrid}), %s, %s, %s, UPPER(%s), 'dam');
+    """
+    with conn.cursor() as cursor:
+        for feature in output_data:
+            cursor.execute(insertquery, feature)
+    conn.commit()
+
+    # retrieve waterfall data from CABD API
+    url = f"https://cabd-web.azurewebsites.net/cabd-api/features/waterfalls?&filter=nhn_watershed_id:in:{nhnWatershedId}"
+    response = urllib.request.urlopen(url)
+    data = json.loads(response.read())
+
+    feature_data = data["features"]
+    output_data = []
+
+    for feature in feature_data:
+        output_feature = []
+        output_feature.append(feature["properties"]["cabd_id"])
+        output_feature.append(feature["geometry"]["coordinates"][0])
+        output_feature.append(feature["geometry"]["coordinates"][1])
+        output_feature.append(feature["properties"]["fall_name_en"])
+        output_feature.append(feature["properties"]["fall_height_m"])
+        output_feature.append(feature["properties"]["passability_status"])
+        output_data.append(output_feature)
+
+
+    insertquery = f"""
+        INSERT INTO {dbTargetSchema}.{dbBarrierTable} (
+            cabd_id, 
+            original_point,
+            name,
+            fall_height_m,
+            passability_status,
+            type)
+        VALUES (%s, ST_Transform(ST_GeomFromText('POINT(%s %s)',4617),{appconfig.dataSrid}), %s,%s, UPPER(%s), 'waterfall');
     """
     with conn.cursor() as cursor:
         for feature in output_data:
@@ -299,13 +388,104 @@ def addPassability(conn, specCodes):
         with conn.cursor() as cursor:
             cursor.execute(query)
 
+
+    # Load barrier passability to intermediate table
     query = f"""
-        alter table {dbTargetSchema}.{dbBarrierTable} 
-        drop column if exists passability_status;
+        SELECT id, code
+        FROM {dbTargetSchema}.fish_species;
     """
 
     with conn.cursor() as cursor:
         cursor.execute(query)
+        species = cursor.fetchall()
+    conn.commit()
+
+    # get waterfall height thresholds
+    query = f"""
+        SELECT code, fall_height_threshold
+        FROM {dbRawDataSchema}.fish_species;
+    """
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        fall_heights = cursor.fetchall()
+    conn.commit()
+
+    query = f"""
+        SELECT id, passability_status, type, fall_height_m
+        FROM {dbTargetSchema}.{dbBarrierTable};
+    """
+
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        feature_data = cursor.fetchall()
+    conn.commit()
+    
+    passability_data = []
+
+            # Get data for passability table
+    for feature in feature_data:
+        for s in species:
+            # acquire fall height threshold for this species
+            for h in fall_heights:
+                if s[1] == h[0]:
+                    fall_height_threshold = h[1]
+            passability_feature = []
+            passability_feature.append(feature[0])
+            passability_feature.append(s[0])
+            # assign passability
+            if feature[2] == 'waterfall' and feature[3]:
+                if float(feature[3]) >= fall_height_threshold:
+                    passability_feature.append('BARRIER')
+                else:
+                    passability_feature.append('PASSABLE')
+            elif feature[2] == 'waterfall':     # Waterfalls with unknown height are passable
+                passability_feature.append('PASSABLE')
+            else:
+                passability_feature.append(feature[1])
+            passability_data.append(passability_feature)
+                    
+    insertquery = f"""
+        INSERT INTO {dbTargetSchema}.barrier_passability (
+            barrier_id
+            ,species_id
+            ,passability_status
+            )
+        VALUES (%s, %s, UPPER(%s));
+
+        
+    """
+    with conn.cursor() as cursor:
+        for feature in passability_data:
+            cursor.execute(insertquery, feature)
+    conn.commit()
+
+    updatequery = f"""
+        UPDATE {dbTargetSchema}.barrier_passability
+            SET passability_status = 
+                CASE
+                WHEN passability_status = 'BARRIER' THEN 0
+                WHEN passability_status = 'UNKNOWN' THEN 0
+                WHEN passability_status = 'PARTIAL BARRIER' THEN 0.5
+                WHEN passability_status = 'PASSABLE' THEN 1
+                ELSE NULL END;
+    """
+
+    with conn.cursor() as cursor:
+        cursor.execute(updatequery)
+    conn.commit()
+
+    updatequery = f"""
+        ALTER TABLE {dbTargetSchema}.barrier_passability
+        ADD COLUMN IF NOT EXISTS species_code varchar(32);
+
+        UPDATE {dbTargetSchema}.barrier_passability b
+        SET species_code = f.code
+        FROM {dbTargetSchema}.fish_species f 
+        WHERE f.id = b.species_id;
+    """
+
+    with conn.cursor() as cursor:
+        cursor.execute(updatequery)
     conn.commit()
 
 def main():

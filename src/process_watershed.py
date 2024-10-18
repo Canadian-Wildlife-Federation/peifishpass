@@ -41,6 +41,8 @@ from processing_scripts import assign_habitat
 from processing_scripts import process_habitat_access_updates
 from processing_scripts import compute_barriers_upstream_values
 from processing_scripts import compute_barrier_dci
+from processing_scripts import barrier_passability_view
+from processing_scripts import rank_barriers
 
 startTime = datetime.now()
 
@@ -73,6 +75,8 @@ assign_habitat.main()
 process_habitat_access_updates.main()
 compute_barriers_upstream_values.main()
 compute_barrier_dci.main()
+rank_barriers.main()
+barrier_passability_view.main()
 
 print ("Processing Complete: " + workingWatershedId)
 print("Runtime: " + str((datetime.now() - startTime)))

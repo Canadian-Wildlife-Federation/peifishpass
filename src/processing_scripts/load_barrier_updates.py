@@ -43,8 +43,22 @@ dbBarrierTable = appconfig.config['BARRIER_PROCESSING']['barrier_table']
 watershedTable = appconfig.config['CREATE_LOAD_SCRIPT']['watershed_table']
 joinDistance = appconfig.config['CROSSINGS']['join_distance']
 snapDistance = appconfig.config['CABD_DATABASE']['snap_distance']
+dbPassabilityTable = appconfig.config['BARRIER_PROCESSING']['passability_table']
+specCodes = appconfig.config[iniSection]['species']
 
 def loadBarrierUpdates(specCodes, connection):
+
+        # create barrier update table if it doesn't exist
+
+    passability_cols  = ''
+
+    for species in specCodes:
+        species = species[0]
+
+        passability_cols = f"""
+            {passability_cols}
+            passability_status_{species} varchar,
+        """
 
     # load updates into a table
     orgDb="dbname='" + appconfig.dbName + "' host='"+ appconfig.dbHost+"' port='"+appconfig.dbPort+"' user='"+appconfig.dbUser+"' password='"+ appconfig.dbPassword+"'"
@@ -53,6 +67,7 @@ def loadBarrierUpdates(specCodes, connection):
     subprocess.run(pycmd)
 
     query = f"""
+        ALTER TABLE {dbTargetSchema}.{dbTargetTable} DROP COLUMN IF EXISTS update_id;
         ALTER TABLE {dbTargetSchema}.{dbTargetTable} ADD COLUMN update_id uuid default gen_random_uuid();
         ALTER TABLE {dbTargetSchema}.{dbTargetTable} DROP CONSTRAINT IF EXISTS {dbTargetTable}_pkey;
         ALTER TABLE {dbTargetSchema}.{dbTargetTable} ADD CONSTRAINT {dbTargetTable}_pkey PRIMARY KEY (update_id);
@@ -159,7 +174,7 @@ def processUpdates(specCodes, connection):
                 break
 
     query = f"""
-        ALTER TABLE {dbTargetSchema}.{dbTargetTable} ADD COLUMN update_status varchar;
+        ALTER TABLE {dbTargetSchema}.{dbTargetTable} ADD COLUMN IF NOT EXISTS update_status varchar;
         UPDATE {dbTargetSchema}.{dbTargetTable} SET update_status = 'ready';
     """
     with connection.cursor() as cursor:
@@ -220,6 +235,46 @@ def processUpdates(specCodes, connection):
 
     with connection.cursor() as cursor:
         cursor.execute(newDeleteQuery)
+    connection.commit()
+
+    # passability status 
+
+    for s in specCodes:
+        s = s[0]
+        p_query = f"""
+            INSERT INTO {dbTargetSchema}.{dbPassabilityTable} (
+                barrier_id
+                ,species_id
+                ,passability_status
+            )
+            SELECT 
+                b.id
+                , (SELECT id
+                    FROM {dbTargetSchema}.fish_species
+                    WHERE code = '{s}')
+                ,u.passability_status_{s}
+            FROM {dbTargetSchema}.{dbBarrierTable} b
+            JOIN {dbTargetSchema}.{dbTargetTable} u
+                ON b.update_id = u.update_id::varchar
+            WHERE u.update_type = 'new feature'
+            AND update_status = 'ready';
+
+            UPDATE {dbTargetSchema}.{dbTargetTable} SET update_status = 'done' WHERE update_type = 'new feature';
+        """
+
+        with connection.cursor() as cursor:
+            cursor.execute(p_query)
+        connection.commit()
+
+    updatequery = f"""
+        UPDATE {dbTargetSchema}.barrier_passability b
+        SET species_code = f.code
+        FROM {dbTargetSchema}.fish_species f 
+        WHERE f.id = b.species_id;
+    """
+
+    with connection.cursor() as cursor:
+        cursor.execute(updatequery)
     connection.commit()
 
     joinBarrierUpdates(connection)

@@ -212,7 +212,7 @@ def writeResults(conn, newAllBarrierData, species):
         data = []
         data.append(record.bid)
         for fish in species:
-            data.append(record.dci[fish])
+            data.append(float(record.dci[fish]))
 
         newdata.append(data)
 
