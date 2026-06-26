@@ -26,17 +26,32 @@ from appconfig import dataSchema
 
 iniSection = appconfig.args.args[0]
 dbTargetSchema = appconfig.config[iniSection]['output_schema']
+
+updateTable = dbTargetSchema + ".habitat_access_updates"
+
 dbTargetStreamTable = appconfig.config['PROCESSING']['stream_table']
 dbSegmentGradientField = appconfig.config['GRADIENT_PROCESSING']['segment_gradient_field']
+species = appconfig.config[iniSection]['species']
 
 def computeHabitatModel(connection):
 
     # spawning
     print("Computing spawning habitat")
+    global specCodes
+    global species
+
+    specCodes = [substring.strip() for substring in species.split(',')]
+
+    if len(specCodes) == 1:
+        specCodes = f"('{specCodes[0]}')"
+    else:
+        specCodes = tuple(specCodes)
+
     query = f"""
         SELECT code, name,
         spawn_gradient_min::float, spawn_gradient_max::float
-        FROM {dataSchema}.{appconfig.fishSpeciesTable};
+        FROM {dataSchema}.{appconfig.fishSpeciesTable}
+        WHERE code IN {specCodes};
     """
 
     with connection.cursor() as cursor:
@@ -232,14 +247,12 @@ def computeHabitatModel(connection):
                     cursor2.execute(query)
                 connection.commit()
 
-            else:
-                pass
-
     # general habitat
     print("Computing combined habitat")
     query = f"""
         SELECT code, name
-        FROM {dataSchema}.{appconfig.fishSpeciesTable};
+        FROM {dataSchema}.{appconfig.fishSpeciesTable}
+        WHERE code IN {specCodes};
     """
 
     with connection.cursor() as cursor:

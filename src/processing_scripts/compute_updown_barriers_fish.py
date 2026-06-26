@@ -112,21 +112,6 @@ def createNetwork(connection, code):
             
             fromNode.addOutEdge(edge)
             toNode.addInEdge(edge)     
-            
-    #add barriers DEPRECIATED
-   # query = f"""
-   #     select 'up', a.id, b.id
-   #     from {dbTargetSchema}.{dbBarrierTable} a, {dbTargetSchema}.{dbTargetStreamTable} b
-   #     where b.geometry && st_buffer(a.snapped_point, 0.01)
-   #         and st_distance(st_startpoint(b.geometry), a.snapped_point) < 0.01
-   #         and a.passability_status_{code} != 1
-   #     union 
-   #     select 'down', a.id, b.id 
-   #     from {dbTargetSchema}.{dbBarrierTable} a, {dbTargetSchema}.{dbTargetStreamTable} b
-   #     where b.geometry && st_buffer(a.snapped_point, 0.01)
-   #         and st_distance(st_endpoint(b.geometry), a.snapped_point) < 0.01
-   #         and a.passability_status_{code} != 1     
-   #"""
     
     #add barriers
     query = f"""
@@ -169,22 +154,6 @@ def createNetwork(connection, code):
                     elif (etype == 'down'):
                         edge.toNode.barrierids.add(bid)
                         
-    #add gradient barriers DEPRECIATED
-    #query = f"""
-    #    select 'up', a.id, b.id 
-    #    from {dbTargetSchema}.{dbGradientBarrierTable} a, {dbTargetSchema}.{dbTargetStreamTable} b
-    #    where b.geometry && st_buffer(a.point, 0.01)
-    #        and st_distance(st_startpoint(b.geometry), a.point) < 0.01
-    #        and (a.type = 'gradient_barrier' or a.type = 'waterfall')
-    #        and a.passability_status_{code} != 1 
-    #    union 
-    #    select 'down', a.id, b.id 
-    #    from {dbTargetSchema}.{dbGradientBarrierTable} a, {dbTargetSchema}.{dbTargetStreamTable} b
-    #    where b.geometry && st_buffer(a.point, 0.01)
-    #        and st_distance(st_endpoint(b.geometry), a.point) < 0.01
-    #        and (a.type = 'gradient_barrier' or a.type = 'waterfall')
-    #        and a.passability_status_{code} != 1
-    #"""
     
     #add gradient barriers
     query = f"""
@@ -349,24 +318,19 @@ def main():
     
     with appconfig.connectdb() as conn:
 
-        query = f"""
-        SELECT code, name
-        FROM {dataSchema}.{appconfig.fishSpeciesTable};
-        """
+        global specCodes
+        global species
 
-        with conn.cursor() as cursor:
-            cursor.execute(query)
-            specCodes = cursor.fetchall()
+        specCodes = [substring.strip() for substring in species.split(',')]
 
         for species in specCodes:
-            code = species[0]
-            name = species[1]
+            code = species
 
             edges.clear()
             nodes.clear()
             
             print("Computing Upstream/Downstream Barriers")
-            print("  processing barriers for", name)
+            print("  processing barriers for", code)
             print("  creating output column")
 
             query = f"""

@@ -70,7 +70,7 @@ dbGeomField = "geometry"
 dbWatershedIdField = "watershed_id"
 
 watershedTable = config[iniSection]['watershed_table']
-fish_parameters = config['DATBASE']['fish_parameters']
+fish_parameters = config['DATABASE']['fish_parameters']
 
 # WCRP speciefic configuration parameters
 dbOutputSchema = config[iniSection]['output_schema']

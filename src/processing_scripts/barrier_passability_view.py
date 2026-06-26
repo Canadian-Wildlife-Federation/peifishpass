@@ -23,36 +23,35 @@
 
 import appconfig
 
-iniSection = appconfig.args.args[0]
-dbTargetSchema = appconfig.config[iniSection]['output_schema']
-watershed_id = appconfig.config[iniSection]['watershed_id']
-dbTargetStreamTable = appconfig.config['PROCESSING']['stream_table']
+iniSection = appconfig.iniSection
+dbTargetSchema = appconfig.dbOutputSchema
+watershed_id = appconfig.watershed_id
 
-dbBarrierTable = appconfig.config['BARRIER_PROCESSING']['barrier_table']
-dbPassabilityTable = appconfig.config['BARRIER_PROCESSING']['passability_table']
-species = appconfig.config[iniSection]['species']
+dbBarrierTable = appconfig.dbBarrierTable
+dbPassabilityTable = appconfig.dbPassabilityTable
 
 def build_views(conn):
     # create view combining barrier and passability table
     # programmatically build columns, joins, and conditions based on species in species table
 
-    global specCodes
+    
+    wcrp = iniSection
 
-    if iniSection == 'cmm':
-        wcrp = 'st_croix'
-    else:
-        wcrp = iniSection
+    specCodes = appconfig.getSpecies()
 
-    specCodes = [substring.strip() for substring in species.split(',')]
-
-    cols = []
-    joinString = ''
-    conditionString = ''
-
-    query = f""" DROP VIEW IF EXISTS {dbTargetSchema}.barrier_passability_view; """
+    query = f""" 
+        DROP VIEW IF EXISTS {dbTargetSchema}_wcrp.barrier_passability_view CASCADE; 
+        DROP VIEW IF EXISTS {dbTargetSchema}_wcrp.natural_barriers_vw;
+    """
     with conn.cursor() as cursor:
         cursor.execute(query)
     conn.commit()
+
+    cols = []
+    nat_cols = []
+    joinString = ''
+    nat_joinstring = ''
+    conditionString = ''
 
     ## This loop builds the condition with all joins for each species
     # This way, the passability columns for each species for each barrier will be in the 
@@ -63,6 +62,10 @@ def build_views(conn):
         col = f"""
         b.func_upstr_hab_{code},
         b.total_upstr_hab_{code},
+        b.func_upstr_hab_{code} * (1 - p{i}.passability_status::double precision) as discon_func_upstr_hab_{code},
+        b.total_upstr_hab_{code} * (1 - p{i}.passability_status::double precision) as discon_total_upstr_hab_{code},
+        b.func_upstr_hab_{code} * (p{i}.passability_status::double precision) as con_func_upstr_hab_{code},
+        b.total_upstr_hab_{code} * (p{i}.passability_status::double precision) as con_total_upstr_hab_{code},
         r{i}.w_func_upstr_hab_{code},
         r{i}.w_total_upstr_hab_{code},
         r{i}.group_id as group_id_{code},
@@ -74,27 +77,36 @@ def build_views(conn):
 		r{i}.w_avg_gain_per_barrier as w_avg_gain_per_barrier_{code},
 		r{i}.rank_w_avg_gain_tiered as rank_w_avg_gain_tiered_{code},
 		r{i}.rank_w_total_upstr_hab as rank_w_total_upstr_hab_{code},
-		r{i}.rank_combined as rank_combined_{code},
+		r{i}.rank_combined as rank_combined_{code}
+        """
+
+        pass_col = f"""
         p{i}.passability_status AS passability_status_{code}
         """
+
         cols.append(col)
-        joinString = joinString + f'JOIN {dbTargetSchema}.{dbPassabilityTable} p{i} ON b.id = p{i}.barrier_id\n'
-        joinString = joinString + f'LEFT JOIN {dbTargetSchema}.ranked_barriers_{code} r{i} ON b.id = r{i}.id\n'
-        joinString = joinString + f'JOIN {dbTargetSchema}.fish_species f{i} ON f{i}.id = p{i}.species_id\n'
+        cols.append(pass_col)
+        nat_cols.append(pass_col)
+
+        pass_join = f'JOIN {dbTargetSchema}.{dbPassabilityTable} p{i} ON b.id = p{i}.barrier_id\n'
+        rank_join = f'LEFT JOIN {dbTargetSchema}.ranked_barriers_{code}_{wcrp} r{i} ON b.id = r{i}.id\n'
+        species_join = f'JOIN {dbTargetSchema}.fish_species f{i} ON f{i}.id = p{i}.species_id\n'
+
+        joinString = joinString + pass_join + rank_join + species_join
+        nat_joinstring = nat_joinstring + pass_join + species_join
+
         if i == 0:
             conditionString = conditionString + f'f{i}.code = \'{code}\'\n'
         else:
             conditionString = conditionString + f'AND f{i}.code = \'{code}\'\n' 
     colString = ','.join(cols)
+    nat_colString = ','.join(nat_cols)
 
     query = f"""
-        CREATE VIEW {dbTargetSchema}.barrier_passability_view AS 
+        CREATE VIEW {dbTargetSchema}_wcrp.barrier_passability_view AS 
         SELECT 
-            b.id,
-            b.cabd_id,
-            b.modelled_id,
+            COALESCE (b.cabd_id, b.modelled_id) as barrier_id,
             b.update_id,
-            b.original_point,
             b.snapped_point,
             b.name,
             b.type,
@@ -108,7 +120,6 @@ def build_views(conn):
             b.strahler_order,
             b.wshed_name,
             b.transport_feature_name,
-            
             b.crossing_status,
             b.crossing_feature_type,
             b.crossing_type,
@@ -121,15 +132,69 @@ def build_views(conn):
             b.culvert_condition,
             b.action_items, 
             b.passability_status_notes,
+            b.func_upstr_hab_all,
+            b.total_upstr_hab_all,
+            b.func_upstr_hab_spawn_all,
+            b.total_upstr_hab_spawn_all,
+            b.func_upstr_hab_rear_all,
+            b.total_upstr_hab_rear_all,
             {colString}
         FROM {dbTargetSchema}.{dbBarrierTable} b
         {joinString}
         WHERE {conditionString};
+
+        ALTER TABLE {dbTargetSchema}_wcrp.barrier_passability_view OWNER TO cwf_analyst;
+        GRANT SELECT ON TABLE {dbTargetSchema}_wcrp.barrier_passability_view TO cwf_user;
     """
 
     # print(query)
     with conn.cursor() as cursor:
         cursor.execute(query)
+    conn.commit()
+
+    query = f"""
+        CREATE VIEW {dbTargetSchema}_wcrp.natural_barriers_vw AS
+        with gradients as (
+            select b.id, b.type, b.point
+            from {dbTargetSchema}.break_points b
+            where type = 'gradient_barrier'
+        ), falls as (
+            select w.id, w.type, w.snapped_point as point
+            from {dbTargetSchema}.barriers w
+            where w.type = 'waterfall'
+        ), nat_barriers as (
+            SELECT *
+            FROM gradients
+            UNION ALL
+            SELECT *
+            FROM falls
+        )
+        SELECT 
+            b.*,
+            {nat_colString}
+        FROM nat_barriers b
+        {nat_joinstring}
+        WHERE {conditionString};
+
+        ALTER TABLE {dbTargetSchema}_wcrp.natural_barriers_vw OWNER TO cwf_analyst;
+        GRANT SELECT ON TABLE {dbTargetSchema}_wcrp.natural_barriers_vw TO cwf_user;
+    """
+
+    # print(query)
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+    conn.commit()
+
+     # to add a new tracking table, in postgresql run this:
+    # SELECT public.create_tracking_table(
+    # 	'<wcrp>',
+    # 	ARRAY['<species_1>', '<species_2>', etc.]
+    # )
+    query = f"""
+        select join_tracking_table_crossings_vw(%s, %s);
+    """
+    with conn.cursor() as cursor:
+        cursor.execute(query, (dbTargetSchema, specCodes))
     conn.commit()
 
 

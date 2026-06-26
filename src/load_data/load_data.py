@@ -27,10 +27,10 @@ from psycopg2.extras import RealDictCursor
 streamTable = appconfig.config['DATABASE']['stream_table']
 roadTable = appconfig.config['CREATE_LOAD_SCRIPT']['road_table']
 trailTable = appconfig.config['CREATE_LOAD_SCRIPT']['trail_table']
-watershedTable = appconfig.config['CREATE_LOAD_SCRIPT']['watershed_table']
+watershedTable = appconfig.watershedTable
 
 file = appconfig.config['CREATE_LOAD_SCRIPT']['raw_data']
-watershedfile = appconfig.config['CREATE_LOAD_SCRIPT']['watershed_data']
+watershedfile = appconfig.watershedfile
 temptable = appconfig.dataSchema + ".temp"
 
 sheds = appconfig.config['HABITAT_STATS']['watersheds'].split(",")
@@ -226,3 +226,6 @@ def main():
     loadTrails(conn)
 
     print("Loading PEI dataset complete")
+
+if __name__ == "__main__":
+    main()
