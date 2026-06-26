@@ -33,7 +33,9 @@ dbTargetStreamTable = appconfig.config['PROCESSING']['stream_table']
 
 dbBarrierTable = appconfig.config['BARRIER_PROCESSING']['barrier_table']
 dbGradientBarrierTable = appconfig.config['BARRIER_PROCESSING']['gradient_barrier_table']
+dbPassabiltyTable = appconfig.config['BARRIER_PROCESSING']['passability_table']
 snapDistance = appconfig.config['CABD_DATABASE']['snap_distance']
+species = appconfig.config[iniSection]['species']
 
 edges = []
 nodes = dict()
@@ -110,20 +112,28 @@ def createNetwork(connection, code):
             
             fromNode.addOutEdge(edge)
             toNode.addInEdge(edge)     
-            
+    
     #add barriers
     query = f"""
         select 'up', a.id, b.id
-        from {dbTargetSchema}.{dbBarrierTable} a, {dbTargetSchema}.{dbTargetStreamTable} b
-        where b.geometry && st_buffer(a.snapped_point, 0.01)
-            and st_distance(st_startpoint(b.geometry), a.snapped_point) < 0.01
-            and a.passability_status_{code} != 1
+        from {dbTargetSchema}.{dbBarrierTable} a
+        join {dbTargetSchema}.{dbPassabiltyTable} p on a.id = p.barrier_id
+        join {dbTargetSchema}.fish_species f on p.species_id = f.id, 
+        {dbTargetSchema}.{dbTargetStreamTable} b
+        where st_dwithin(b.geometry, a.snapped_point, 0.01)
+            and st_dwithin(st_startpoint(b.geometry), a.snapped_point, 0.01)
+            and f.code = '{code}'
+            and p.passability_status != '1'
         union 
         select 'down', a.id, b.id 
-        from {dbTargetSchema}.{dbBarrierTable} a, {dbTargetSchema}.{dbTargetStreamTable} b
-        where b.geometry && st_buffer(a.snapped_point, 0.01)
-            and st_distance(st_endpoint(b.geometry), a.snapped_point) < 0.01
-            and a.passability_status_{code} != 1     
+        from {dbTargetSchema}.{dbBarrierTable} a
+        join {dbTargetSchema}.{dbPassabiltyTable} p on a.id = p.barrier_id
+        join {dbTargetSchema}.fish_species f on p.species_id = f.id, 
+        {dbTargetSchema}.{dbTargetStreamTable} b
+        where st_dwithin(b.geometry, a.snapped_point, 0.01)
+            and st_dwithin(st_endpoint(b.geometry), a.snapped_point, 0.01)
+            and f.code = '{code}'
+            and p.passability_status != '1'
     """
    
     #load geometries and create a network
@@ -144,21 +154,30 @@ def createNetwork(connection, code):
                     elif (etype == 'down'):
                         edge.toNode.barrierids.add(bid)
                         
+    
     #add gradient barriers
     query = f"""
         select 'up', a.id, b.id 
-        from {dbTargetSchema}.{dbGradientBarrierTable} a, {dbTargetSchema}.{dbTargetStreamTable} b
-        where b.geometry && st_buffer(a.point, 0.01)
-            and st_distance(st_startpoint(b.geometry), a.point) < 0.01
-            and a.type = 'gradient_barrier'
-            and a.passability_status_{code} != 1 
+        from {dbTargetSchema}.{dbGradientBarrierTable} a
+        join {dbTargetSchema}.{dbPassabiltyTable} p on a.id = p.barrier_id
+        join {dbTargetSchema}.fish_species f on p.species_id = f.id, 
+        {dbTargetSchema}.{dbTargetStreamTable} b
+        where st_dwithin(b.geometry, a.point, 0.01)
+            and st_dwithin(st_startpoint(b.geometry), a.point, 0.01)
+            and (a.type = 'gradient_barrier' or a.type = 'waterfall')
+            and f.code = '{code}'
+            and p.passability_status != '1'
         union 
         select 'down', a.id, b.id 
-        from {dbTargetSchema}.{dbGradientBarrierTable} a, {dbTargetSchema}.{dbTargetStreamTable} b
-        where b.geometry && st_buffer(a.point, 0.01)
-            and st_distance(st_endpoint(b.geometry), a.point) < 0.01
-            and a.type = 'gradient_barrier'
-            and a.passability_status_{code} != 1
+        from {dbTargetSchema}.{dbGradientBarrierTable} a
+        join {dbTargetSchema}.{dbPassabiltyTable} p on a.id = p.barrier_id
+        join {dbTargetSchema}.fish_species f on p.species_id = f.id, 
+        {dbTargetSchema}.{dbTargetStreamTable} b
+        where st_dwithin(b.geometry, a.point, 0.01)
+            and st_dwithin(st_endpoint(b.geometry), a.point, 0.01)
+            and (a.type = 'gradient_barrier' or a.type = 'waterfall')
+            and f.code = '{code}'
+            and p.passability_status != '1'
     """
    
     #load geometries and create a network
@@ -299,24 +318,19 @@ def main():
     
     with appconfig.connectdb() as conn:
 
-        query = f"""
-        SELECT code, name
-        FROM {dataSchema}.{appconfig.fishSpeciesTable};
-        """
+        global specCodes
+        global species
 
-        with conn.cursor() as cursor:
-            cursor.execute(query)
-            specCodes = cursor.fetchall()
+        specCodes = [substring.strip() for substring in species.split(',')]
 
         for species in specCodes:
-            code = species[0]
-            name = species[1]
+            code = species
 
             edges.clear()
             nodes.clear()
             
             print("Computing Upstream/Downstream Barriers")
-            print("  processing barriers for", name)
+            print("  processing barriers for", code)
             print("  creating output column")
 
             query = f"""

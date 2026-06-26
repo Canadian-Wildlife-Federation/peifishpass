@@ -1,0 +1,5 @@
+﻿code,name,accessibility_gradient,spawn_gradient_min,spawn_gradient_max,rear_gradient_min,rear_gradient_max,spawn_discharge_min,spawn_discharge_max,rear_discharge_min,rear_discharge_max,spawn_channel_confinement_min,spawn_channel_confinement_max,rear_channel_confinement_min,rear_channel_confinement_max,fall_height_threshold
+ae,American eel,0.3,0,100,0,100,0,100,0,100,0,100,0,100,999
+as,Atlantic salmon,0.3,0,0.03,0,0.03,0,100,0,100,0,100,0,100,10
+sm,Smelt,0.05,0,0.05,0,0.05,0,100,0,100,0,100,0,100,0
+bt,Brook trout,0.3,0,100,0,100,0,100,0,100,0,100,0,100,999

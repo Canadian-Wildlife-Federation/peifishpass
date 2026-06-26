@@ -23,6 +23,8 @@
 import appconfig
 from imagecodecs.imagecodecs import NONE
 
+import sys
+
 iniSection = appconfig.args.args[0]
 dataSchema = appconfig.config['DATABASE']['data_schema']
 dbTargetSchema = appconfig.config[iniSection]['output_schema']
@@ -37,17 +39,33 @@ dbVertexTable = appconfig.config['GRADIENT_PROCESSING']['vertex_gradient_table']
 dbTargetGeom = appconfig.config['ELEVATION_PROCESSING']['smoothedgeometry_field']
 dbGradientBarrierTable = appconfig.config['BARRIER_PROCESSING']['gradient_barrier_table']
 dbHabAccessUpdates = "habitat_access_updates"
+specCodes = appconfig.config[iniSection]['species']
 
-with appconfig.connectdb() as conn:
+# stream order segment weighting
+w1 = 0.25
+w2 = 0.75
 
-    query = f"""
-    SELECT code
-    FROM {dataSchema}.{appconfig.fishSpeciesTable};
+def insertPassability(conn, passability_data):
+    """
+    Insert data into the barrier_passability table
+    """
+    if len(passability_data) == 0:
+        return
+
+    insertquery = f"""
+        INSERT INTO {dbTargetSchema}.barrier_passability (
+            barrier_id
+            ,species_id
+            ,species_code
+            ,passability_status
+        )
+        VALUES(%s, %s, %s, %s);
     """
 
     with conn.cursor() as cursor:
-        cursor.execute(query)
-        specCodes = cursor.fetchall()
+        for feature in passability_data:
+            cursor.execute(insertquery, feature)
+    conn.commit()
 
 def breakstreams(conn):
         
@@ -59,7 +77,7 @@ def breakstreams(conn):
 
     newCols = []
     for species in specCodes:
-        code = species[0]
+        code = species
         col = "passability_status_" + code
         newCols.append(col)
     colString = ' numeric,'.join(newCols)
@@ -83,9 +101,10 @@ def breakstreams(conn):
             FROM {dbTargetSchema}.{dbBarrierTable};
 
         --habitat and accessibility updates
-        INSERT INTO {dbTargetSchema}.{dbGradientBarrierTable} (point, id, type) 
+        INSERT INTO {dbTargetSchema}.{dbGradientBarrierTable} (point, id, type)
             SELECT snapped_point, id, update_type
             FROM {dbTargetSchema}.{dbHabAccessUpdates};
+
     """
         
     # print(query)
@@ -169,8 +188,8 @@ def breakstreams(conn):
                 
                 # set gradient barriers to be passable for all other species
                 for species in specCodes:
-                    if species[0] != code:
-                        foo = species[0]
+                    if species != code:
+                        foo = species
                         col = "passability_status_" + foo
                         query = f"""
                             UPDATE {dbTargetSchema}.{dbGradientBarrierTable} SET {col} = 1;
@@ -182,7 +201,65 @@ def breakstreams(conn):
                     
             lastmainstem = mainstem
             lastgradient = gradient
-            
+
+        # add gradient barriers to passability table
+        query = f"""
+            SELECT id
+            FROM {dbTargetSchema}.{dbGradientBarrierTable}
+            WHERE id NOT IN (SELECT barrier_id FROM {dbTargetSchema}.barrier_passability)
+        """
+
+        with conn.cursor() as cursor:
+            cursor.execute(query)
+            feature_data = cursor.fetchall()
+        conn.commit()
+
+        query = f"""
+            SELECT id, code
+            FROM {dbTargetSchema}.fish_species
+            WHERE code = '{code}'
+        """ 
+        # print(query)
+        with conn.cursor() as cursor:
+            cursor.execute(query)
+            species = cursor.fetchall()
+        conn.commit()
+
+        query = f"""
+            SELECT id, code
+            FROM {dbTargetSchema}.fish_species
+            WHERE code != '{code}'
+        """
+        # print(query)
+        with conn.cursor() as cursor:
+            cursor.execute(query)
+            other_species = cursor.fetchall()
+        conn.commit()
+
+        passability_data = []
+        other_passability_data = [] # barriers passable for all other species
+
+        for feature in feature_data:
+            for s in species:
+                passability_feature = []
+                passability_feature.append(feature[0])
+                passability_feature.append(s[0])
+                passability_feature.append(s[1])
+                passability_feature.append(0)
+                if len(passability_feature) != 0:
+                    passability_data.append(passability_feature)
+            for s in other_species:
+                other_passability_feature = []
+                other_passability_feature.append(feature[0])
+                other_passability_feature.append(s[0])
+                other_passability_feature.append(s[1])
+                other_passability_feature.append(1)
+                if len(other_passability_feature) != 0:
+                    other_passability_data.append(other_passability_feature)
+        
+        insertPassability(conn, passability_data)
+        insertPassability(conn, other_passability_data)
+
     #break streams at snapped points
     #todo: may want to ensure this doesn't create small stream segments - 
     #ensure barriers are not on top of each other
@@ -190,7 +267,7 @@ def breakstreams(conn):
     print("breaking streams")
     
     query = f"""
-        CREATE TEMPORARY TABLE newstreamlines AS
+        CREATE TABLE {dbTargetSchema}.newstreamlines AS
         
         with breakpoints as (
             SELECT a.{appconfig.dbIdField} as id, 
@@ -204,7 +281,7 @@ def breakstreams(conn):
         ),
         newlines as (
             SELECT {appconfig.dbIdField},
-                st_split(st_snap(geometry, rawpnt, 0.01), rawpnt) as geometry
+                st_split(st_snap(geometry, rawpnt, 0.001), rawpnt) as geometry
             FROM breakpoints 
         )
         
@@ -221,31 +298,37 @@ def breakstreams(conn):
              ON y.{appconfig.dbIdField} = z.{appconfig.dbIdField};
         
         DELETE FROM {dbTargetSchema}.{dbTargetStreamTable} 
-        WHERE {appconfig.dbIdField} IN (SELECT {appconfig.dbIdField} FROM newstreamlines);
+        WHERE {appconfig.dbIdField} IN (SELECT {appconfig.dbIdField} FROM {dbTargetSchema}.newstreamlines);
         
               
         INSERT INTO  {dbTargetSchema}.{dbTargetStreamTable} 
             (id, source_id, {appconfig.dbWatershedIdField}, stream_name, strahler_order, 
-            segment_length,
+            segment_length, w_segment_length,
             {appconfig.streamTableChannelConfinementField},{appconfig.streamTableDischargeField},
             mainstem_id, geometry)
         SELECT gen_random_uuid(), a.source_id, a.{appconfig.dbWatershedIdField}, 
             a.stream_name, a.strahler_order,
             st_length2d(a.geometry) / 1000.0, 
+            case strahler_order 
+            when 1 then (st_length2d(a.geometry) / 1000.0) * {w1}
+            when 2 then (st_length2d(a.geometry) / 1000.0) * {w2}
+            else (st_length2d(a.geometry) / 1000.0)
+            end,
             a.{appconfig.streamTableChannelConfinementField},
             a.{appconfig.streamTableDischargeField}, 
             mainstem_id, a.geometry
-        FROM newstreamlines a;
+        FROM {dbTargetSchema}.newstreamlines a;
+
+        DELETE FROM {dbTargetSchema}.{dbTargetStreamTable} WHERE ST_IsEmpty(geometry);
 
         DROP INDEX IF EXISTS {dbTargetSchema}."smooth_geom_idx";
         CREATE INDEX smooth_geom_idx ON {dbTargetSchema}.{dbTargetStreamTable} USING gist({dbTargetGeom});
         
-        DROP TABLE newstreamlines;
+        DROP TABLE {dbTargetSchema}.newstreamlines;
 
         UPDATE {dbTargetSchema}.{dbTargetStreamTable} b SET wshed_name = a.name FROM {appconfig.dataSchema}.{appconfig.watershedTable} a WHERE st_intersects(b.geometry, a.geometry);
     
     """
-
     with conn.cursor() as cursor:
         cursor.execute(query)
     conn.commit()
@@ -272,6 +355,7 @@ def recomputeMainstreamMeasure(conn):
         FROM measures
         WHERE measures.id = {dbTargetSchema}.{dbTargetStreamTable}.id
     """
+    # print(query)
     #load geometries and create a network
     with conn.cursor() as cursor:
         cursor.execute(query)
@@ -319,6 +403,22 @@ def updateBarrier(conn):
                         
 def main():
     with appconfig.connectdb() as connection:
+
+        global specCodes
+
+        specCodes = [substring.strip() for substring in specCodes.split(',')]
+
+        if len(specCodes) == 1:
+            specCodes = f"('{specCodes[0]}')"
+        else:
+            specCodes = tuple(specCodes)
+
+        query = f"""
+        SELECT code
+        FROM {dataSchema}.{appconfig.fishSpeciesTable}
+        WHERE code IN {specCodes};
+        """
+
         print("    breaking streams at barrier points")
         breakstreams(connection)
         

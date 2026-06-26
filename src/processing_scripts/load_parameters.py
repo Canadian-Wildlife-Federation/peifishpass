@@ -25,8 +25,12 @@ import appconfig
 import subprocess
 import sys
 
-dataFile = appconfig.config['DATABASE']['fish_parameters']
 sourceTable = appconfig.dataSchema + ".fish_species_raw"
+
+dataFile = appconfig.fish_parameters
+fishSpeciesTable = appconfig.fishSpeciesTable
+
+specCodes = appconfig.getSpecies()
 
 def main():
     with appconfig.connectdb() as conn:
@@ -53,6 +57,7 @@ def main():
                 name varchar,
                 
                 accessibility_gradient double precision not null,
+                fall_height_threshold double precision not null,
                 
                 spawn_gradient_min numeric,
                 spawn_gradient_max numeric,
@@ -96,7 +101,8 @@ def main():
                 spawn_channel_confinement_min,
                 spawn_channel_confinement_max,
                 rear_channel_confinement_min,
-                rear_channel_confinement_max
+                rear_channel_confinement_max,
+                fall_height_threshold
             )
             SELECT
                 code,
@@ -117,7 +123,8 @@ def main():
                 spawn_channel_confinement_min,
                 spawn_channel_confinement_max,
                 rear_channel_confinement_min,
-                rear_channel_confinement_max
+                rear_channel_confinement_max,
+                fall_height_threshold
             FROM {sourceTable};
 
             DROP TABLE {sourceTable};

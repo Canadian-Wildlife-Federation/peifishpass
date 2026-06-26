@@ -20,15 +20,50 @@
 # ASSUMPTION - data is in equal area projection where distance functions return values in metres
 #
 import appconfig
+import ast
 
 iniSection = appconfig.args.args[0]
 dbTargetSchema = appconfig.config[iniSection]['output_schema']
-workingWatershedId = appconfig.config[iniSection]['watershed_id']
+
+workingWatershedId = ast.literal_eval(appconfig.config[iniSection]['watershed_id'])
+workingWatershedId = [x.upper() for x in workingWatershedId]
+
+if len(workingWatershedId) == 1:
+    workingWatershedId = f"('{workingWatershedId[0]}')"
+else:
+    workingWatershedId = tuple(workingWatershedId)
+
 dbTargetStreamTable = appconfig.config['PROCESSING']['stream_table']
-watershedTable = appconfig.config['CREATE_LOAD_SCRIPT']['watershed_table']
+
+watershedTable = appconfig.watershedTable
+
+publicSchema = "public"
+aoi = "chyf_aoi"
+aoiTable = publicSchema + "." + aoi
+
+# stream order segment weighting
+w1 = 0.25
+w2 = 0.75
 
 def main():
     with appconfig.connectdb() as conn:
+
+        query = f"""
+        SELECT id::varchar FROM {aoiTable} WHERE short_name IN {workingWatershedId};
+        """
+        with conn.cursor() as cursor:
+            cursor.execute(query)
+            ids = cursor.fetchall()
+
+        aoi_ids = []
+        
+        for x in ids:
+            aoi_ids.append(x[0])
+
+        if len(aoi_ids) == 1:
+            aoi_ids = f"('{aoi_ids[0]}')"
+        else:
+            aoi_ids = tuple(aoi_ids)
 
         query = f"""
             CREATE SCHEMA IF NOT EXISTS {dbTargetSchema};
@@ -43,6 +78,7 @@ def main():
               stream_name varchar,
               strahler_order integer,
               segment_length double precision,
+              w_segment_length double precision,
               geometry geometry(LineString, {appconfig.dataSrid}),
               primary key ({appconfig.dbIdField})
             );
@@ -57,33 +93,36 @@ def main():
             ALTER DEFAULT PRIVILEGES IN SCHEMA {dbTargetSchema} GRANT SELECT ON TABLES TO public;
 
             INSERT INTO {dbTargetSchema}.{dbTargetStreamTable} 
-                ({appconfig.dbIdField}, source_id,
-                {appconfig.dbWatershedIdField}, 
-                stream_name, strahler_order, geometry)
-            SELECT gen_random_uuid(), t1.id,
-                aoi_id,
-                stream_name, strahler_order,
-                CASE
-                WHEN ST_WITHIN(t1.geometry,t2.geometry)
-                THEN t1.geometry
-                ELSE ST_Intersection(t1.geometry, t2.geometry)
-                END AS geometry
+                ({appconfig.dbIdField}, source_id, {appconfig.dbWatershedIdField}
+                ,stream_name, strahler_order, geometry)
+            SELECT DISTINCT ON (t1.id) gen_random_uuid(), t1.id, t1.aoi_id,
+                t1.rivername1, t1.strahler_order,
+                (ST_Dump((ST_Intersection(t1.geometry, t2.geometry)))).geom
             FROM {appconfig.dataSchema}.{appconfig.streamTable} t1
             JOIN {appconfig.dataSchema}.{appconfig.watershedTable} t2 ON ST_Intersects(t1.geometry, t2.geometry)
-            WHERE aoi_id = '{workingWatershedId}'
-            AND strahler_order IS NOT NULL;
+            WHERE aoi_id IN {aoi_ids};
 
             UPDATE {dbTargetSchema}.{dbTargetStreamTable} SET segment_length = st_length2d(geometry) / 1000.0;
             ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} ADD COLUMN geometry_original geometry(LineString, {appconfig.dataSrid});
+            UPDATE {dbTargetSchema}.{dbTargetStreamTable} set w_segment_length = (case strahler_order 
+                                                                                    when 1 then segment_length * {w1}
+                                                                                    when 2 then segment_length * {w2}
+                                                                                    else segment_length
+                                                                                    end);
             UPDATE {dbTargetSchema}.{dbTargetStreamTable} SET geometry_original = geometry;
             UPDATE {dbTargetSchema}.{dbTargetStreamTable} SET geometry = st_snaptogrid(geometry, 0.01);
             UPDATE {dbTargetSchema}.{dbTargetStreamTable} b SET wshed_name = a.name FROM {appconfig.dataSchema}.{appconfig.watershedTable} a WHERE st_intersects(b.geometry, a.geometry);
+
+            DELETE FROM {dbTargetSchema}.{dbTargetStreamTable} WHERE ST_IsEmpty(geometry);
 
             --TODO: remove this when values are provided
             ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} add column {appconfig.streamTableChannelConfinementField} numeric;
             ALTER TABLE {dbTargetSchema}.{dbTargetStreamTable} add column {appconfig.streamTableDischargeField} numeric;
             UPDATE {dbTargetSchema}.{dbTargetStreamTable} set {appconfig.streamTableChannelConfinementField} = floor(random() * 100);
             UPDATE {dbTargetSchema}.{dbTargetStreamTable} set {appconfig.streamTableDischargeField} = floor(random() * 100);
+            
+            ALTER SCHEMA {dbTargetSchema} OWNER TO cwf_analyst;
+            ALTER TABLE  {dbTargetSchema}.{dbTargetStreamTable} OWNER TO cwf_analyst;
         """
         with conn.cursor() as cursor:
             cursor.execute(query)

@@ -30,34 +30,32 @@ file = appconfig.config[iniSection]['habitat_access_updates']
 
 dataTable = "habitat_access_updates"
 
-snapDistance = appconfig.config['CABD_DATABASE']['snap_distance']
+snapDistance = 125
 
 def main():
 
     with appconfig.connectdb() as conn:
 
-        query = f"""DROP TABLE IF EXISTS {dbTargetSchema}.{dataTable};"""
-        with conn.cursor() as cursor:
-            cursor.execute(query)
-        conn.commit()
-
         print("Loading habitat and accessibility updates")
-        layer = "hab_access_updates"
+        layer = "habitat_access_updates"
         orgDb="dbname='" + appconfig.dbName + "' host='"+ appconfig.dbHost+"' port='"+appconfig.dbPort+"' user='"+appconfig.dbUser+"' password='"+ appconfig.dbPassword+"'"
-        pycmd = '"' + appconfig.ogr + '" -overwrite -f "PostgreSQL" PG:"' + orgDb + '" -t_srs EPSG:' + appconfig.dataSrid + ' -nlt CONVERT_TO_LINEAR  -nln "' + dbTargetSchema + '.' + dataTable + '" -lco GEOMETRY_NAME=geometry "' + file + '" ' + layer
+        pycmd = '"' + appconfig.ogr + '" -f "PostgreSQL" PG:"' + orgDb + '" -t_srs EPSG:' + appconfig.dataSrid + ' -nlt CONVERT_TO_LINEAR  -nln "' + dbTargetSchema + '.' + dataTable + '" -lco GEOMETRY_NAME=geom "' + file + '" ' + layer
         subprocess.run(pycmd)
 
         query = f"""
-
+        ALTER TABLE {dbTargetSchema}.{dataTable} DROP COLUMN IF EXISTS id;
         ALTER TABLE {dbTargetSchema}.{dataTable} add column id uuid;
         UPDATE {dbTargetSchema}.{dataTable} set id = gen_random_uuid();
         
+        ALTER TABLE {dbTargetSchema}.{dataTable} DROP COLUMN IF EXISTS snapped_point;
         ALTER TABLE {dbTargetSchema}.{dataTable} add column snapped_point geometry(POINT, {appconfig.dataSrid});
         
-        SELECT public.snap_to_network('{dbTargetSchema}', '{dataTable}', 'geometry', 'snapped_point', '{snapDistance}');
+        SELECT public.snap_to_network('{dbTargetSchema}', '{dataTable}', 'geom', 'snapped_point', '{snapDistance}');
 
         CREATE INDEX {dataTable}_snapped_point_idx ON {dbTargetSchema}.{dataTable} USING gist (snapped_point);
         
+        ALTER TABLE {dbTargetSchema}.{dataTable} DROP COLUMN IF EXISTS stream_id;
+        ALTER TABLE {dbTargetSchema}.{dataTable} DROP COLUMN IF EXISTS stream_measure;
         ALTER TABLE {dbTargetSchema}.{dataTable} add column stream_id uuid;
         ALTER TABLE {dbTargetSchema}.{dataTable} add column stream_measure numeric;
         
@@ -74,6 +72,9 @@ def main():
         with conn.cursor() as cursor:
             cursor.execute(query)
         conn.commit()
+
+    print("Loading habitat and accessibility updates complete")
+
 
 if __name__ == "__main__":
     main()

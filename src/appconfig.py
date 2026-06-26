@@ -36,37 +36,54 @@ args = parser.parse_args()
 if args.c:
     configfile = args.c
 
+iniSection = args.args[0] 
+
 config = configparser.ConfigParser()
 config.read(configfile)
 
+# Environment variables
 ogr = config['OGR']['ogr']
 proj = config['OGR']['proj']
 gdalinfo = config['OGR']['gdalinfo']
 gdalsrsinfo = config['OGR']['gdalsrsinfo']
 
+# Connection info
 dbHost = config['DATABASE']['host']
 dbPort = config['DATABASE']['port']
 dbName = config['DATABASE']['name']
 dbUser = input(f"""Enter username to access {dbName}:\n""")
 dbPassword = getpass.getpass(f"""Enter password to access {dbName}:\n""")
 
+# Files to load raw data and info for wcrp set up
 dataSchema = config['DATABASE']['data_schema']
 streamTable = config['DATABASE']['stream_table']
 streamTableDischargeField = "discharge"
 streamTableChannelConfinementField = "channel_confinement"
 fishSpeciesTable = config['DATABASE']['fish_species_table']
 
+demDir = config[iniSection]['dem_directory']
+
 dataSrid = config['DATABASE']['working_srid']
 
 dbIdField = "id"
 dbGeomField = "geometry"
 dbWatershedIdField = "watershed_id"
-watershedTable = config['CREATE_LOAD_SCRIPT']['watershed_table']
+
+watershedTable = config[iniSection]['watershed_table']
+fish_parameters = config['DATABASE']['fish_parameters']
+
+# WCRP speciefic configuration parameters
+dbOutputSchema = config[iniSection]['output_schema']
+dbBarrierTable = config['BARRIER_PROCESSING']['barrier_table']
+dbPassabilityTable = config['BARRIER_PROCESSING']['passability_table']
+species = config[iniSection]['species']
+
+watershed_id = config[iniSection]['watershed_id']
 
 class Accessibility(enum.Enum):
-    ACCESSIBLE = 'ACCESSIBLE'
-    POTENTIAL = 'POTENTIALLY ACCESSIBLE'
-    NOT = 'NOT ACCESSIBLE'
+    ACCESSIBLE = 'CONNECTED NATURALLY ACCESSIBLE WATERBODIES'
+    POTENTIAL = 'DISCONNECTED NATURALLY ACCESSIBLE WATERBODIES'
+    NOT = 'NATURALLY INACCESSIBLE WATERBODIES'
 
 
 print(f"""--- Configuration Settings Begin ---
@@ -91,3 +108,10 @@ def connectdb():
                    host=dbHost,
                    password=dbPassword,
                    port=dbPort)
+
+def getSpecies():
+    """
+    Format the species in the config file into an array of strings
+    :returns: an array containing the species of interest
+    """
+    return [substring.strip() for substring in species.split(',')]

@@ -32,7 +32,9 @@ dbTargetSchema = appconfig.config[iniSection]['output_schema']
 watershed_id = appconfig.config[iniSection]['watershed_id']
 dbTargetStreamTable = appconfig.config['PROCESSING']['stream_table']
 
+dbPassabilityTable = appconfig.config['BARRIER_PROCESSING']['passability_table']
 dbBarrierTable = appconfig.config['BARRIER_PROCESSING']['barrier_table']
+species_codes = appconfig.config[iniSection]['species']
 
 edges = []
 nodes = dict()
@@ -54,7 +56,7 @@ class Node:
         self.outedges.append(edge)
     
 class Edge:
-    def __init__(self, fromnode, tonode, fid, length, ls):
+    def __init__(self, fromnode, tonode, fid, length, strahler_order, ls):
         self.fromNode = fromnode
         self.toNode = tonode
         self.ls = ls
@@ -89,6 +91,18 @@ class Edge:
         self.downbarriers = {}
         self.downpassability = {}
         self.dci = {}
+
+        # weighted length for ranking calculation
+        if strahler_order == 1:
+            self.w_length = self.length * 0.25
+        elif strahler_order == 2:
+            self.w_length = self.length * 0.75
+        else:
+            self.w_length = self.length
+
+        # weighted habitat for rankings
+        self.w_habitatup = {}
+        self.w_funchabitatup = {}
     
     def print(self):
         print("fid:", self.fid)
@@ -122,10 +136,21 @@ class Edge:
         return iter([self.fid, self.length, self.downbarriers, self.downpassability, self.habitat])
 
 def createNetwork(connection):
+
+    global specCodes
+    global species_codes
+
+    specCodes = [substring.strip() for substring in species_codes.split(',')]
+
+    if len(specCodes) == 1:
+        specCodes = f"('{specCodes[0]}')"
+    else:
+        specCodes = tuple(specCodes)
     
     query = f"""
         SELECT a.code
         FROM {appconfig.dataSchema}.{appconfig.fishSpeciesTable} a
+        WHERE code IN {specCodes};
     """
     
     barrierupcntmodel = ''
@@ -152,6 +177,7 @@ def createNetwork(connection):
             st_length(a.{appconfig.dbGeomField}), a.{appconfig.dbGeomField}
             {barrierupcntmodel} {barrierdownmodel}
             {accessibilitymodel} {spawnhabitatmodel} {rearhabitatmodel} {habitatmodel}
+            ,a.strahler_order
         FROM {dbTargetSchema}.{dbTargetStreamTable} a
         LEFT JOIN {dbTargetSchema}.{dbBarrierTable} b
         ON a.id = b.stream_id_up;
@@ -166,6 +192,7 @@ def createNetwork(connection):
             fid = feature[0]
             length = feature[1]
             geom = shapely.wkb.loads(feature[2] , hex=True)
+            strahler_order = feature[-1]
             
             startc = geom.coords[0]
             endc = geom.coords[len(geom.coords)-1]
@@ -187,7 +214,7 @@ def createNetwork(connection):
                 toNode = Node(endc[0], endc[1])
                 nodes[endt] = toNode
 
-            edge = Edge(fromNode, toNode, fid, length, geom)
+            edge = Edge(fromNode, toNode, fid, length, strahler_order, geom)
             index = 3
             for fish in species:
                 edge.upbarriercnt[fish] = feature[index]
@@ -197,8 +224,14 @@ def createNetwork(connection):
 
                 for barrier in edge.downbarriers[fish]:
                     query = f"""
-                    SELECT passability_status_{fish} FROM {dbTargetSchema}.{dbBarrierTable} WHERE id = '{barrier}';
+                    SELECT passability_status 
+                    FROM {dbTargetSchema}.{dbPassabilityTable} p
+                    JOIN {dbTargetSchema}.fish_species s
+                        ON p.species_id = s.id
+                    WHERE p.barrier_id = '{barrier}'
+                    AND s.code = '{fish}'
                     """
+
                     with connection.cursor() as cursor2:
                         cursor2.execute(query)
                         status = cursor2.fetchone()
@@ -257,6 +290,10 @@ def processNodes(connection):
         outbarriercnt = {}
         dci = {}
         total_length = {}
+
+        # weighted
+        w_habitat = {}
+        w_funchabitat = {}
         
         for fish in species:
             uplength[fish] = 0
@@ -269,6 +306,9 @@ def processNodes(connection):
             outbarriercnt[fish] = 0
             dci[fish] = 0
             total_length[fish] = sum(edge.length for edge in edges if edge.habitat[fish])
+            # weighted
+            w_habitat[fish] = 0
+            w_funchabitat[fish] = 0
 
         for inedge in node.inedges:
 
@@ -292,6 +332,9 @@ def processNodes(connection):
                     spawn_funchabitat[fish] = spawn_funchabitat[fish] + inedge.spawn_funchabitatup[fish]
                     rear_funchabitat[fish] = rear_funchabitat[fish] + inedge.rear_funchabitatup[fish]
                     funchabitat[fish] = funchabitat[fish] + inedge.funchabitatup[fish]
+                    # weighted habitat gain
+                    w_habitat[fish] = w_habitat[fish] + inedge.w_habitatup[fish]
+                    w_funchabitat[fish] = w_funchabitat[fish] + inedge.w_funchabitatup[fish] 
                 
                 spawn_habitat_all = spawn_habitat_all + inedge.spawn_habitatup_all
                 rear_habitat_all = rear_habitat_all + inedge.rear_habitatup_all
@@ -370,6 +413,22 @@ def processNodes(connection):
                     else: 
                         outedge.funchabitatup[fish] = funchabitat[fish]
 
+                    # weighted habitat for ranking
+                    if outedge.habitat[fish]:
+                        outedge.w_habitatup[fish] = w_habitat[fish] + outedge.w_length
+                    else:
+                        outedge.w_habitatup[fish] = w_habitat[fish]
+
+                    if outedge.upbarriercnt[fish] != outbarriercnt[fish]:
+                        if outedge.habitat[fish]:
+                            outedge.w_funchabitatup[fish] = outedge.w_length
+                        else:
+                            outedge.w_funchabitatup[fish] = 0
+                    elif outedge.habitat[fish]:
+                        outedge.w_funchabitatup[fish] = w_funchabitat[fish] + outedge.w_length
+                    else: 
+                        outedge.w_funchabitatup[fish] = w_funchabitat[fish]
+
                 
                 if outedge.spawn_habitat_all:
                     outedge.spawn_habitatup_all = spawn_habitat_all + outedge.length
@@ -436,7 +495,9 @@ def writeResults(connection):
         tablestr = tablestr + ', func_upstr_hab_rear_' + fish + ' double precision'
         tablestr = tablestr + ', func_upstr_hab_' + fish + ' double precision'
         tablestr = tablestr + ', dci_' + fish + ' double precision'
-        inserttablestr = inserttablestr + ",%s,%s,%s,%s,%s,%s,%s,%s"
+        tablestr = tablestr + ', w_total_upstr_hab_' + fish + ' double precision' # weighted habitat
+        tablestr = tablestr + ', w_func_upstr_hab_' + fish + ' double precision' # weighted habitat
+        inserttablestr = inserttablestr + ",%s,%s,%s,%s,%s,%s,%s,%s,%s,%s"
 
     tablestr = tablestr + ', total_upstr_hab_spawn_all' + ' double precision'
     tablestr = tablestr + ', total_upstr_hab_rear_all' + ' double precision'
@@ -471,21 +532,23 @@ def writeResults(connection):
         data = []
         data.append(edge.fid)
         for fish in species:
-            data.append (edge.specaup[fish])
-            data.append (edge.spawn_habitatup[fish])
-            data.append (edge.rear_habitatup[fish])
-            data.append (edge.habitatup[fish])
-            data.append (edge.spawn_funchabitatup[fish])
-            data.append (edge.rear_funchabitatup[fish])
-            data.append (edge.funchabitatup[fish])
-            data.append (edge.dci[fish])
+            data.append (float(edge.specaup[fish]))
+            data.append (float(edge.spawn_habitatup[fish]))
+            data.append (float(edge.rear_habitatup[fish]))
+            data.append (float(edge.habitatup[fish]))
+            data.append (float(edge.spawn_funchabitatup[fish]))
+            data.append (float(edge.rear_funchabitatup[fish]))
+            data.append (float(edge.funchabitatup[fish]))
+            data.append (float(edge.dci[fish]))
+            data.append(edge.w_habitatup[fish]) # weighted habitat
+            data.append(edge.w_funchabitatup[fish]) # weighted habitat
         
-        data.append(edge.spawn_habitatup_all)
-        data.append(edge.rear_habitatup_all)
-        data.append(edge.habitatup_all)
-        data.append(edge.spawn_funchabitatup_all)
-        data.append(edge.rear_funchabitatup_all)
-        data.append(edge.funchabitatup_all)
+        data.append(float(edge.spawn_habitatup_all))
+        data.append(float(edge.rear_habitatup_all))
+        data.append(float(edge.habitatup_all))
+        data.append(float(edge.spawn_funchabitatup_all))
+        data.append(float(edge.rear_funchabitatup_all))
+        data.append(float(edge.funchabitatup_all))
 
         newdata.append( data )
 
@@ -533,8 +596,17 @@ def writeResults(connection):
             FROM {dbTargetSchema}.temp a,{dbTargetSchema}.{dbTargetStreamTable} b 
             WHERE a.stream_id = b.id AND 
                 a.stream_id = {dbTargetSchema}.{dbBarrierTable}.stream_id_up;
-            
-            
+
+            --- WEIGHTED TOTAL HABITAT -----
+            ALTER TABLE {dbTargetSchema}.{dbBarrierTable} DROP COLUMN IF EXISTS w_total_upstr_hab_{fish};
+            ALTER TABLE {dbTargetSchema}.{dbBarrierTable} ADD COLUMN w_total_upstr_hab_{fish} double precision;
+
+            UPDATE {dbTargetSchema}.{dbBarrierTable} 
+            SET w_total_upstr_hab_{fish} = a.w_total_upstr_hab_{fish} / 1000.0 
+            FROM {dbTargetSchema}.temp a,{dbTargetSchema}.{dbTargetStreamTable} b 
+            WHERE a.stream_id = b.id AND 
+                a.stream_id = {dbTargetSchema}.{dbBarrierTable}.stream_id_up;
+
             --functional upstream habitat
             ALTER TABLE {dbTargetSchema}.{dbBarrierTable} DROP COLUMN IF EXISTS func_upstr_hab_spawn_{fish};
             ALTER TABLE {dbTargetSchema}.{dbBarrierTable} ADD COLUMN func_upstr_hab_spawn_{fish} double precision;
@@ -559,6 +631,16 @@ def writeResults(connection):
 
             UPDATE {dbTargetSchema}.{dbBarrierTable} 
             SET func_upstr_hab_{fish} = a.func_upstr_hab_{fish} / 1000.0 
+            FROM {dbTargetSchema}.temp a,{dbTargetSchema}.{dbTargetStreamTable} b 
+            WHERE a.stream_id = b.id AND 
+                a.stream_id = {dbTargetSchema}.{dbBarrierTable}.stream_id_up;
+
+            --- WEIGHTED FUNC HABITAT ---
+            ALTER TABLE {dbTargetSchema}.{dbBarrierTable} DROP COLUMN IF EXISTS w_func_upstr_hab_{fish};
+            ALTER TABLE {dbTargetSchema}.{dbBarrierTable} ADD COLUMN w_func_upstr_hab_{fish} double precision;
+
+            UPDATE {dbTargetSchema}.{dbBarrierTable} 
+            SET w_func_upstr_hab_{fish} = a.w_func_upstr_hab_{fish} / 1000.0 
             FROM {dbTargetSchema}.temp a,{dbTargetSchema}.{dbTargetStreamTable} b 
             WHERE a.stream_id = b.id AND 
                 a.stream_id = {dbTargetSchema}.{dbBarrierTable}.stream_id_up;
@@ -647,9 +729,19 @@ def writeResults(connection):
 
 def assignBarrierCounts(connection):
 
+    global specCodes
+
+    specCodes = [substring.strip() for substring in species_codes.split(',')]
+
+    if len(specCodes) == 1:
+        specCodes = f"('{specCodes[0]}')"
+    else:
+        specCodes = tuple(specCodes)
+
     query = f"""
         SELECT a.code
         FROM {appconfig.dataSchema}.{appconfig.fishSpeciesTable} a
+        WHERE code IN {specCodes};
     """
 
     with connection.cursor() as cursor:

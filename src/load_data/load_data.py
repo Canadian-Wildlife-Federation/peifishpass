@@ -22,143 +22,113 @@
 import subprocess
 import appconfig
 import os
+from psycopg2.extras import RealDictCursor
 
 streamTable = appconfig.config['DATABASE']['stream_table']
 roadTable = appconfig.config['CREATE_LOAD_SCRIPT']['road_table']
 trailTable = appconfig.config['CREATE_LOAD_SCRIPT']['trail_table']
-watershedTable = appconfig.config['CREATE_LOAD_SCRIPT']['watershed_table']
+watershedTable = appconfig.watershedTable
 
 file = appconfig.config['CREATE_LOAD_SCRIPT']['raw_data']
-watershedfile = appconfig.config['CREATE_LOAD_SCRIPT']['watershed_data']
+watershedfile = appconfig.watershedfile
 temptable = appconfig.dataSchema + ".temp"
 
-with appconfig.connectdb() as conn:
+sheds = appconfig.config['HABITAT_STATS']['watersheds'].split(",")
 
+
+def loadWatersheds(conn):
     print("Loading Watershed Boundaries")
-    layer = "PEIWatersheds"
+    layer = watershedTable
     datatable = appconfig.dataSchema + "." + watershedTable
     orgDb="dbname='" + appconfig.dbName + "' host='"+ appconfig.dbHost+"' port='"+appconfig.dbPort+"' user='"+appconfig.dbUser+"' password='"+ appconfig.dbPassword+"'"
     pycmd = '"' + appconfig.ogr + '" -overwrite -f "PostgreSQL" PG:"' + orgDb + '" -t_srs EPSG:' + appconfig.dataSrid + ' -nlt geometry -nln "' + datatable + '" -nlt CONVERT_TO_LINEAR -lco GEOMETRY_NAME=geometry "' + watershedfile + '" ' + layer
     subprocess.run(pycmd)
 
-    print("Loading Streams")
-    layer = "stream"
-    datatable = appconfig.dataSchema + "." + streamTable
-    orgDb="dbname='" + appconfig.dbName + "' host='"+ appconfig.dbHost+"' port='"+appconfig.dbPort+"' user='"+appconfig.dbUser+"' password='"+ appconfig.dbPassword+"'"
-    pycmd = '"' + appconfig.ogr + '" -overwrite -f "PostgreSQL" PG:"' + orgDb + '" -t_srs EPSG:' + appconfig.dataSrid + ' -nln "' + temptable + '" -lco GEOMETRY_NAME=geometry "' + file + '" ' + layer
-    subprocess.run(pycmd)
-
     query = f"""
-    TRUNCATE TABLE {datatable};
-
-    INSERT INTO {datatable} (
-        id,
-        stream_name,
-        strahler_order,
-        ef_type,
-        ef_subtype,
-        rank,
-        length,
-        aoi_id,
-        from_nexus_id,
-        to_nexus_id,
-        ecatchment_id,
-        graph_id,
-        mainstem_id,
-        max_uplength,
-        hack_order,
-        horton_order,
-        shreve_order,
-        objectid,
-        enabled,
-        hydroid,
-        hydrocode,
-        reachcode,
-        name,
-        lengthkm,
-        lengthdown,
-        flowdir,
-        ftype,
-        edgetype,
-        shape_leng,
-        primary_,
-        secondary,
-        tertiary,
-        label,
-        source,
-        picture,
-        field_date,
-        stream_sou,
-        comment,
-        flipped,
-        from_node,
-        to_node,
-        nextdownid,
-        fromelev,
-        toelev,
-        geometry)
-
-    SELECT 
-        id::uuid,
-        name,
-        strahler_order,
-        ef_type,
-        ef_subtype,
-        rank,
-        length,
-        aoi_id,
-        from_nexus_id::uuid,
-        to_nexus_id::uuid,
-        ecatchment_id::uuid,
-        graph_id,
-        mainstem_id::uuid,
-        max_uplength,
-        hack_order,
-        horton_order,
-        shreve_order,
-        objectid,
-        enabled,
-        hydroid,
-        hydrocode,
-        reachcode,
-        name,
-        lengthkm,
-        lengthdown,
-        flowdir,
-        ftype,
-        edgetype,
-        shape_leng,
-        primary_,
-        secondary,
-        tertiary,
-        label,
-        source,
-        picture,
-        field_date,
-        stream_sou,
-        comment,
-        flipped,
-        from_node,
-        to_node,
-        nextdownid,
-        fromelev,
-        toelev,
-        st_geometryn(geometry,1) 
-    FROM
-    {temptable};
-    
-    DROP table {temptable};
+    ALTER TABLE {appconfig.dataSchema}.{watershedTable} OWNER TO cwf_analyst;
     """
 
     with conn.cursor() as cursor:
         cursor.execute(query)
     conn.commit()
 
+def loadStreams(conn):
+    print("Loading stream data")
+
+    publicSchema = "public"
+
+    flowpath = "chyf_flowpath"
+    flowpathProperties = "chyf_flowpath_properties"
+    flowpathNames = "chyf_names"
+    aoi = "chyf_aoi"
+
+    flowpathTable = publicSchema + "." + flowpath
+    flowpathPropertiesTable = publicSchema + "." + flowpathProperties
+    flowpathNamesTable = publicSchema + "." + flowpathNames
+    aoiTable = publicSchema + "." + aoi
+
+    aois = str(sheds)[1:-1].upper()
+    query = f"""
+    SELECT id::varchar FROM {aoiTable} WHERE short_name IN ({aois});
+    """
+    with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+        cursor.execute(query)
+        rows = cursor.fetchall()
+
+    # Puts aoiTuple in a bracketed string to be used in SQL where clauses
+    if len(rows) == 1:
+        aoiTuple = f"('{rows[0]['id']}')"
+    else:
+        aoiTuple = tuple([row['id'] for row in rows])
+
+    # Create stream tables within AOI boundaries
+    query = f"""
+    DROP TABLE IF EXISTS {appconfig.dataSchema}.{streamTable};
+    DROP TABLE IF EXISTS {appconfig.dataSchema}.{flowpathProperties};
+    
+    CREATE TABLE {appconfig.dataSchema}.{streamTable} as SELECT * FROM {flowpathTable} WHERE aoi_id IN {aoiTuple} AND ef_type != 2 AND rank = 1;
+    CREATE TABLE {appconfig.dataSchema}.{flowpathProperties} as SELECT * FROM {flowpathPropertiesTable} WHERE aoi_id IN {aoiTuple};
+
+    ALTER TABLE {appconfig.dataSchema}.{streamTable} ALTER COLUMN geometry TYPE geometry(LineString, {appconfig.dataSrid}) USING ST_Transform(geometry, {appconfig.dataSrid});
+    
+    CREATE INDEX {appconfig.dataSchema}_{streamTable}_geometry on {appconfig.dataSchema}.{streamTable} using gist(geometry); 
+    CREATE INDEX {appconfig.dataSchema}_{streamTable}_id on {appconfig.dataSchema}.{streamTable} (id);
+    CREATE INDEX {appconfig.dataSchema}_{flowpathProperties}_id on {appconfig.dataSchema}.{flowpathProperties} (id);
+
+    ALTER TABLE {appconfig.dataSchema}.{streamTable} ADD PRIMARY KEY (id);
+    
+    ANALYZE {appconfig.dataSchema}.{flowpathProperties};
+    ANALYZE {appconfig.dataSchema}.{streamTable};
+
+    ALTER TABLE {appconfig.dataSchema}.{streamTable} OWNER TO cwf_analyst;
+    ALTER TABLE {appconfig.dataSchema}.{flowpathProperties} OWNER TO cwf_analyst;
+    """
+    # print(query)
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+    conn.commit()
+
+    query = f"""
+    ALTER TABLE {appconfig.dataSchema}.{streamTable} ADD COLUMN rivername1 varchar;
+    ALTER TABLE {appconfig.dataSchema}.{streamTable} ADD COLUMN rivername2 varchar;
+    ALTER TABLE {appconfig.dataSchema}.{streamTable} ADD COLUMN strahler_order integer;
+    ALTER TABLE {appconfig.dataSchema}.{streamTable} ADD COLUMN watershed_name varchar;
+
+    UPDATE {appconfig.dataSchema}.{streamTable} SET rivername1 = a.name_en FROM {flowpathNamesTable} a WHERE rivernameid1 IS NOT NULL AND rivernameid1 = a.name_id;
+    UPDATE {appconfig.dataSchema}.{streamTable} SET rivername2 = a.name_en FROM {flowpathNamesTable} a WHERE rivernameid2 IS NOT NULL AND rivernameid2 = a.name_id;
+    UPDATE {appconfig.dataSchema}.{streamTable} b SET strahler_order = a.strahler_order FROM {appconfig.dataSchema}.{flowpathProperties} a WHERE b.id = a.id;
+    """
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+    conn.commit()
+
+def loadRoads(conn):
     print("Loading Roads")
     layer = "road"
     datatable = appconfig.dataSchema + "." + roadTable
     wshedtable = appconfig.dataSchema + "." + watershedTable
     orgDb="dbname='" + appconfig.dbName + "' host='"+ appconfig.dbHost+"' port='"+appconfig.dbPort+"' user='"+appconfig.dbUser+"' password='"+ appconfig.dbPassword+"'"
+
     pycmd = '"' + appconfig.ogr + '" -overwrite -f "PostgreSQL" PG:"' + orgDb + '" -t_srs EPSG:' + appconfig.dataSrid + ' -nlt CONVERT_TO_LINEAR  -nln "' + temptable + '" -lco GEOMETRY_NAME=geometry "' + file + '" ' + layer
     subprocess.run(pycmd)
 
@@ -189,12 +159,17 @@ with appconfig.connectdb() as conn:
     UPDATE {datatable} t1 SET wshed_name = t2.name FROM {wshedtable} t2 WHERE ST_Contains(t2.geometry, t1.geometry);
     
     DROP table {temptable};
+
+    ALTER TABLE {appconfig.dataSchema}.{roadTable} ADD COLUMN IF NOT EXISTS watershed_name varchar;
+
+    ALTER TABLE {appconfig.dataSchema}.{roadTable} OWNER TO cwf_analyst;
     """
 
     with conn.cursor() as cursor:
         cursor.execute(query)
     conn.commit()
 
+def loadTrails(conn):       
     print("Loading Trails")
     layer = "trail"
     datatable = appconfig.dataSchema + "." + trailTable
@@ -230,10 +205,27 @@ with appconfig.connectdb() as conn:
     UPDATE {datatable} t1 SET wshed_name = t2.name FROM {wshedtable} t2 WHERE ST_Contains(t2.geometry, t1.geometry);
 
     DROP table {temptable};
+
+    ALTER TABLE {appconfig.dataSchema}.{trailTable} ADD COLUMN IF NOT EXISTS watershed_name varchar;
+
+    ALTER TABLE {appconfig.dataSchema}.{trailTable} OWNER TO cwf_analyst;
     """
 
     with conn.cursor() as cursor:
         cursor.execute(query)
     conn.commit()
 
-print("Loading PEI dataset complete")
+def main():
+
+    print("Connecting to database")
+
+    conn = appconfig.connectdb()
+    loadWatersheds(conn)
+    loadStreams(conn)
+    loadRoads(conn)
+    loadTrails(conn)
+
+    print("Loading PEI dataset complete")
+
+if __name__ == "__main__":
+    main()

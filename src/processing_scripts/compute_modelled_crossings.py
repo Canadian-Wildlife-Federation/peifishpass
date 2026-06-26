@@ -38,17 +38,9 @@ trailTable = appconfig.config['CREATE_LOAD_SCRIPT']['trail_table']
     
 dbBarrierTable = appconfig.config['BARRIER_PROCESSING']['barrier_table']
 snapDistance = appconfig.config['CABD_DATABASE']['snap_distance']
+dbPassabilityTable = appconfig.config['BARRIER_PROCESSING']['passability_table']
+specCodes = appconfig.config[iniSection]['species']
 
-with appconfig.connectdb() as conn:
-
-    query = f"""
-    SELECT code
-    FROM {dataSchema}.{appconfig.fishSpeciesTable};
-    """
-
-    with conn.cursor() as cursor:
-        cursor.execute(query)
-        specCodes = cursor.fetchall()
 
 def tableExists(connection):
 
@@ -105,6 +97,7 @@ def createTable(connection):
 
         with connection.cursor() as cursor:
             cursor.execute(query)
+        connection.commit()
 
         # add species-specific passability fields
         for species in specCodes:
@@ -119,6 +112,7 @@ def createTable(connection):
 
             with connection.cursor() as cursor:
                 cursor.execute(query)
+            connection.commit()
 
     else:
         query = f"""
@@ -166,6 +160,7 @@ def computeCrossings(connection):
         
     query = f"""
         --roads
+
         INSERT INTO {dbTargetSchema}.{dbModelledCrossingsTable} 
             (stream_name, strahler_order, stream_id, transport_feature_name, crossing_feature_type, geometry) 
         
@@ -268,11 +263,15 @@ def computeAttributes(connection):
 
         query = f"""
             UPDATE {dbTargetSchema}.{dbModelledCrossingsTable}
+            SET {colname} = 1 WHERE crossing_subtype = 'bridge';
+
+            UPDATE {dbTargetSchema}.{dbModelledCrossingsTable}
             SET {colname} = 0 WHERE {colname} IS NULL;
         """
 
         with connection.cursor() as cursor:
             cursor.execute(query)
+        connection.commit()
 
 def loadToBarriers(connection):
 
@@ -283,15 +282,22 @@ def loadToBarriers(connection):
 
         col = "passability_status_" + code
         newCols.append(col)
-
+    
     colString = ','.join(newCols)
 
     query = f"""
+        DELETE 
+        FROM {dbTargetSchema}.{dbPassabilityTable} bp
+        USING {dbTargetSchema}.{dbBarrierTable} b 
+        WHERE b.id = bp.barrier_id AND 
+            b.type = 'stream_crossing';
+
         DELETE FROM {dbTargetSchema}.{dbBarrierTable} WHERE type = 'stream_crossing';
+
         
         INSERT INTO {dbTargetSchema}.{dbBarrierTable}(
             modelled_id, snapped_point,
-            type, {colString},
+            type,
             stream_name, strahler_order, stream_id, 
             transport_feature_name, crossing_status,
             crossing_feature_type, crossing_type,
@@ -299,18 +305,82 @@ def loadToBarriers(connection):
         )
         SELECT 
             modelled_id, geometry,
-            'stream_crossing', {colString},
+            'stream_crossing',
             stream_name, strahler_order, stream_id, 
             transport_feature_name, crossing_status,
             crossing_feature_type, crossing_type,
             crossing_subtype
         FROM {dbTargetSchema}.{dbModelledCrossingsTable};
+
+        UPDATE {dbTargetSchema}.{dbBarrierTable} SET wshed_name = '{dbWatershedId}';
         
-        SELECT public.snap_to_network('{dbTargetSchema}', '{dbBarrierTable}', 'original_point', 'snapped_point', '{snapDistance}');
+        SELECT public.snap_to_network('{dbTargetSchema}', '{dbBarrierTable}', 'original_point', 'snapped_point', '{snapDistance}');  
     """
 
     with connection.cursor() as cursor:
         cursor.execute(query)
+    connection.commit()
+
+    #if secondaryWatershedTable != 'None':
+    #    query = f'UPDATE {dbTargetSchema}.{dbBarrierTable} b SET secondary_wshed_name = a.sec_name FROM {appconfig.dataSchema}.{secondaryWatershedTable} a WHERE ST_INTERSECTS(b.snapped_point, a.geometry);'
+    #    with connection.cursor() as cursor:
+    #        cursor.execute(query)
+    #    connection.commit()
+    #else:
+    #    # defualt to wcrp name
+    #    query = f"UPDATE {dbTargetSchema}.{dbBarrierTable} b SET secondary_wshed_name = '{iniSection}'"
+    #    with connection.cursor() as cursor:
+    #        cursor.execute(query)
+    #    connection.commit()
+
+    query = f"""
+        SELECT id 
+        FROM {dbTargetSchema}.fish_species
+    """
+
+    with connection.cursor() as cursor:
+        cursor.execute(query)
+        species = cursor.fetchall()
+    connection.commit()
+
+    passability_data = []
+    
+    query = f"""
+        SELECT b.id, b.crossing_subtype
+        FROM {dbTargetSchema}.{dbBarrierTable} b
+        JOIN {dbTargetSchema}.{dbModelledCrossingsTable} c
+            ON b.modelled_id = c.modelled_id;
+    """
+
+    with connection.cursor() as cursor:
+        cursor.execute(query)
+        feature_data = cursor.fetchall()
+    connection.commit()
+
+    # Get data for passability table
+    for feature in feature_data:
+        for s in species:
+            passability_feature = []
+            passability_feature.append(feature[0])
+            passability_feature.append(s[0])
+            if feature[1] == 'bridge':
+                passability_feature.append(1)
+            else:
+                passability_feature.append(0)
+            passability_data.append(passability_feature)
+
+    insertquery = f"""
+        INSERT INTO {dbTargetSchema}.{dbPassabilityTable} (
+            barrier_id
+            ,species_id
+            ,passability_status
+        )
+        VALUES(%s, %s, %s);
+    """
+    
+    with connection.cursor() as cursor:
+        for feature in passability_data:
+            cursor.execute(insertquery, feature)
     connection.commit()
 
 def main():
@@ -321,45 +391,47 @@ def main():
 
         print("Computing Modelled Crossings")
 
-        tableExists(conn)
+        global specCodes
+
+        specCodes = [substring.strip() for substring in specCodes.split(',')]
+
+        if len(specCodes) == 1:
+            specCodes = f"('{specCodes[0]}')"
+        else:
+            specCodes = tuple(specCodes)
+
+        query = f"""
+        SELECT code
+        FROM {dataSchema}.{appconfig.fishSpeciesTable}
+        WHERE code IN {specCodes};
+        """
+
+        with conn.cursor() as cursor:
+            cursor.execute(query)
+            specCodes = cursor.fetchall()
 
         result = tableExists(conn)
 
+        print("  creating tables")
+        createTable(conn)
+
+        print("  computing modelled crossings")
+        computeCrossings(conn)
+
         if result:
-
-            print("  creating tables")
-            createTable(conn)
-
-            print("  computing modelled crossings")
-            computeCrossings(conn)
-
             print("  matching to archived crossings")
             matchArchive(conn)
             
             conn.commit()
 
-            print("  calculating modelled crossing attributes")
-            computeAttributes(conn)
+        print("  calculating modelled crossing attributes")
+        computeAttributes(conn)
 
-            print("  loading to barriers table")
-            loadToBarriers(conn)
-            
-            conn.commit()
+        print("  loading to barriers table")
+        loadToBarriers(conn)
         
-        else:
-            print("  creating tables")
-            createTable(conn)
-            
-            print("  computing modelled crossings")
-            computeCrossings(conn)
-
-            print("  calculating modelled crossing attributes")
-            computeAttributes(conn)
-
-            print("  loading to barriers table")
-            loadToBarriers(conn)
-            
-            conn.commit()
+        conn.commit()
+        
                 
     print("done")
 

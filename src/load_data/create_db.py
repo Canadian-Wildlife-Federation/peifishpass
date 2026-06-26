@@ -29,9 +29,19 @@ trailTable = appconfig.config['CREATE_LOAD_SCRIPT']['trail_table']
 query = f"""
     drop schema if exists {appconfig.dataSchema} cascade;
 
-    CREATE EXTENSION IF NOT EXISTS postgis;
+    
     
     create schema {appconfig.dataSchema};
+    CREATE EXTENSION IF NOT EXISTS postgis ;
+    """
+print (f"""Creating {appconfig.dataSchema} """)
+
+with appconfig.connectdb() as conn:
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+
+print (f"""Creating {appconfig.dataSchema}.{appconfig.streamTable} """)
+query = f"""
     
     create table {appconfig.dataSchema}.{appconfig.streamTable} (
         id uuid not null,
@@ -86,6 +96,13 @@ query = f"""
 
     ALTER TABLE {appconfig.dataSchema}.{appconfig.streamTable} OWNER TO cwf_analyst;
 
+    """
+with appconfig.connectdb() as conn:
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+
+
+query = f"""
     create index {appconfig.streamTable}_geom2d_idx on {appconfig.dataSchema}.{appconfig.streamTable} using gist(geometry);
     
     create table {appconfig.dataSchema}.{roadTable} ( 
