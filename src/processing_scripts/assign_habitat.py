@@ -151,7 +151,8 @@ def computeHabitatModel(connection):
     query = f"""
         SELECT code, name,
         rear_gradient_min::float, rear_gradient_max::float
-        FROM {dataSchema}.{appconfig.fishSpeciesTable};
+        FROM {dataSchema}.{appconfig.fishSpeciesTable}
+        WHERE code IN {specCodes};
     """
 
     with connection.cursor() as cursor:

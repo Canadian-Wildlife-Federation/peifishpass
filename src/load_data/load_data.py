@@ -24,12 +24,15 @@ import appconfig
 import os
 from psycopg2.extras import RealDictCursor
 
+iniSection = appconfig.args.args[0]
+
 streamTable = appconfig.config['DATABASE']['stream_table']
-roadTable = appconfig.config['CREATE_LOAD_SCRIPT']['road_table']
+roadTable = appconfig.config[iniSection]['road_table']
 trailTable = appconfig.config['CREATE_LOAD_SCRIPT']['trail_table']
 watershedTable = appconfig.watershedTable
 
 file = appconfig.config['CREATE_LOAD_SCRIPT']['raw_data']
+roadfile = appconfig.config[iniSection]['road_data']
 watershedfile = appconfig.watershedfile
 temptable = appconfig.dataSchema + ".temp"
 
@@ -129,10 +132,21 @@ def loadRoads(conn):
     wshedtable = appconfig.dataSchema + "." + watershedTable
     orgDb="dbname='" + appconfig.dbName + "' host='"+ appconfig.dbHost+"' port='"+appconfig.dbPort+"' user='"+appconfig.dbUser+"' password='"+ appconfig.dbPassword+"'"
 
-    pycmd = '"' + appconfig.ogr + '" -overwrite -f "PostgreSQL" PG:"' + orgDb + '" -t_srs EPSG:' + appconfig.dataSrid + ' -nlt CONVERT_TO_LINEAR  -nln "' + temptable + '" -lco GEOMETRY_NAME=geometry "' + file + '" ' + layer
+    pycmd = '"' + appconfig.ogr + '" -overwrite -f "PostgreSQL" PG:"' + orgDb + '" -t_srs EPSG:' + appconfig.dataSrid + ' -nlt CONVERT_TO_LINEAR -explodecollections -unsetFid -nln "' + temptable + '" -lco GEOMETRY_NAME=geometry "' + roadfile + '" ' + layer
     subprocess.run(pycmd)
 
     query = f"""
+    create table if not exists {datatable} ( 
+        id uuid not null,
+        name varchar,
+        wshed_name varchar,
+        geometry geometry(LineString, {appconfig.dataSrid}) not null,
+        primary key(id)
+    );
+    create index if not exists {roadTable}_geom_idx on {datatable} using gist(geometry);
+
+    ALTER TABLE {datatable} OWNER TO cwf_analyst;
+
     TRUNCATE TABLE {datatable};
 
     INSERT INTO {datatable}(
@@ -143,13 +157,13 @@ def loadRoads(conn):
         gen_random_uuid(),
         t1.name,
         CASE
-            WHEN ST_WITHIN(t1.geometry,t2.geometry)
-            THEN t1.geometry
-            ELSE ST_Intersection(t1.geometry, t2.geometry)
-            END AS geometry 
+            WHEN ST_WITHIN(t1.geometry, t2.geometry) THEN t1.geometry
+            ELSE ST_GeometryN(ST_CollectionExtract(ST_Intersection(t1.geometry, t2.geometry), 2), 1)
+        END AS geometry
     FROM
     {temptable} t1
-    JOIN {wshedtable} t2 ON ST_Intersects(t1.geometry, t2.geometry);
+    JOIN {wshedtable} t2 ON ST_Intersects(t1.geometry, t2.geometry)
+    WHERE NOT ST_IsEmpty(ST_CollectionExtract(ST_Intersection(t1.geometry, t2.geometry), 2));
 
     UPDATE {datatable} SET name = NULL WHERE name = 'Placemark';
     UPDATE {datatable} SET name = NULL WHERE length(trim(name)) = 0;
@@ -166,6 +180,7 @@ def loadRoads(conn):
     """
 
     with conn.cursor() as cursor:
+        # print(query)
         cursor.execute(query)
     conn.commit()
 

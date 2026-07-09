@@ -114,12 +114,14 @@ def breakstreams(conn):
         
     # break at gradient points
 
+    formatted_codes = ", ".join(f"'{s}'" for s in specCodes)
+
     query = f"""
         SELECT accessibility_gradient as minvalue, code
         FROM {appconfig.dataSchema}.{appconfig.fishSpeciesTable}
-        WHERE accessibility_gradient = (SELECT min(accessibility_gradient) FROM {appconfig.dataSchema}.{appconfig.fishSpeciesTable});
+        WHERE accessibility_gradient = (SELECT min(accessibility_gradient) FROM {appconfig.dataSchema}.{appconfig.fishSpeciesTable} WHERE code in ({formatted_codes}))
+        and code in ({formatted_codes});
     """
-    
     mingradient = -1
     
     with conn.cursor() as cursor:
@@ -337,7 +339,7 @@ def recomputeMainstreamMeasure(conn):
     
     query = f"""
         WITH mainstems AS (
-            SELECT st_reverse(st_linemerge(st_collect(geometry))) as geometry, mainstem_id
+            SELECT st_reverse(st_geometryn(st_multi(st_linemerge(st_collect(geometry))), 1)) as geometry, mainstem_id
             FROM {dbTargetSchema}.{dbTargetStreamTable}
             GROUP BY mainstem_id
         ),
@@ -408,10 +410,12 @@ def main():
 
         specCodes = [substring.strip() for substring in specCodes.split(',')]
 
-        if len(specCodes) == 1:
-            specCodes = f"('{specCodes[0]}')"
-        else:
-            specCodes = tuple(specCodes)
+        # if len(specCodes) == 1:
+        #     specCodes = f"('{specCodes[0]}')"
+        # else:
+            # specCodes = tuple(specCodes)
+
+        specCodes = tuple(specCodes)
 
         query = f"""
         SELECT code
