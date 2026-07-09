@@ -22,6 +22,7 @@
 # from the stream network
 #
 import appconfig
+import sys
 from appconfig import dataSchema
 
 iniSection = appconfig.args.args[0]
@@ -32,7 +33,7 @@ dbTargetStreamTable = appconfig.config['PROCESSING']['stream_table']
 
 dbModelledCrossingsTable = appconfig.config['CROSSINGS']['modelled_crossings_table']
 
-roadTable = appconfig.config['CREATE_LOAD_SCRIPT']['road_table']
+roadTable = appconfig.config[iniSection]['road_table']
 railTable = appconfig.config['CREATE_LOAD_SCRIPT']['rail_table']
 trailTable = appconfig.config['CREATE_LOAD_SCRIPT']['trail_table']
     
@@ -40,6 +41,8 @@ dbBarrierTable = appconfig.config['BARRIER_PROCESSING']['barrier_table']
 snapDistance = appconfig.config['CABD_DATABASE']['snap_distance']
 dbPassabilityTable = appconfig.config['BARRIER_PROCESSING']['passability_table']
 specCodes = appconfig.config[iniSection]['species']
+
+
 
 
 def tableExists(connection):

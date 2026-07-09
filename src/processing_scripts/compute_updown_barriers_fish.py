@@ -23,6 +23,7 @@ from collections import deque
 import shapely.wkb
 import psycopg2.extras
 import appconfig
+import sys
 
 iniSection = appconfig.args.args[0]
 

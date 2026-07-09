@@ -227,7 +227,9 @@ def processArea(demfile, connection, watershed_id, onlymissing = False):
     print("      saving results")
     updatequery = f"""
         UPDATE {dbTargetSchema}.{dbTargetTable} 
-        set {dbTargetGeom} = st_setsrid(st_geomfromwkb(%s),{srid})
+        set {dbTargetGeom} = st_transform(
+            st_setsrid(st_geomfromwkb(%s),{demfile.srid}),
+            {srid})
         WHERE {appconfig.dbIdField} = %s
     """
     

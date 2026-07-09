@@ -363,22 +363,15 @@ def processUpdates(connection):
 
         UPDATE {dbTargetSchema}.{dbBarrierTable} AS b
         SET
-            culvert_number = CASE WHEN a.culvert_number IS NOT NULL THEN a.culvert_number ELSE b.culvert_number END,
-            name = CASE WHEN a.name IS NOT NULL THEN a.name ELSE b.name END,
-            type = CASE WHEN a.barrier_type IS NOT NULL THEN a.barrier_type ELSE b.type END,
-            assessment_type = CASE WHEN a.assessment_type IS NOT NULL THEN a.assessment_type ELSE b.assessment_type END,
-            structure_id = CASE WHEN a.structure_id IS NOT NULL THEN a.structure_id ELSE b.structure_id END,
             date_examined = CASE WHEN a.date_examined IS NOT NULL THEN a.date_examined ELSE b.date_examined END,
             transport_feature_name = CASE WHEN (a.road_name IS NOT NULL AND a.road_name IS DISTINCT FROM b.transport_feature_name) THEN a.road_name ELSE b.transport_feature_name END,
-            culvert_type = CASE WHEN a.culvert_type IS NOT NULL THEN a.culvert_type ELSE b.culvert_type END,
-            culvert_condition = CASE WHEN a.culvert_condition IS NOT NULL THEN a.culvert_condition ELSE b.culvert_condition END,
+            crossing_subtype = CASE WHEN a.crossing_subtype IS NOT NULL THEN a.crossing_subtype ELSE b.crossing_subtype END,
             passability_status_notes =
                 CASE
-                WHEN a.passability_status_notes IS NOT NULL AND b.passability_status_notes IS NULL THEN a.passability_status_notes
-                WHEN a.passability_status_notes IS NOT NULL AND b.passability_status_notes IS NOT NULL THEN b.passability_status_notes || ';' || a.passability_status_notes
-                ELSE b.passability_status_notes END,
-            action_items = CASE WHEN a.action_items IS NOT NULL THEN a.action_items ELSE b.action_items END,
-            crossing_subtype = CASE WHEN a.crossing_subtype IS NOT NULL THEN a.crossing_subtype ELSE b.crossing_subtype END
+                WHEN a.notes IS NOT NULL AND b.passability_status_notes IS NULL THEN a.notes
+                WHEN a.notes IS NOT NULL AND b.passability_status_notes IS NOT NULL AND b.passability_status_notes LIKE a.notes THEN b.passability_status_notes
+                WHEN a.notes IS NOT NULL AND b.passability_status_notes IS NOT NULL THEN b.passability_status_notes || ';' || a.notes
+                ELSE b.passability_status_notes END
         FROM {dbTargetSchema}.{dbTargetTable} AS a
         WHERE b.id = a.barrier_id
         AND a.update_status = 'ready';
