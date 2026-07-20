@@ -36,6 +36,8 @@ import psycopg2.extras
 import numpy as np
 import uuid
 
+np.set_printoptions(legacy="1.25")
+
 iniSection = appconfig.args.args[0]
 dbTargetSchema = appconfig.config[iniSection]['output_schema']
 watershed_id = appconfig.config[iniSection]['watershed_id']
