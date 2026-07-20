@@ -36,8 +36,7 @@ roadfile = appconfig.config[iniSection]['road_data']
 watershedfile = appconfig.watershedfile
 temptable = appconfig.dataSchema + ".temp"
 
-sheds = appconfig.config['HABITAT_STATS']['watersheds'].split(",")
-
+# sheds = appconfig.config[iniSection]['nhn_watershed_id'].strip('[]').replace('"', "'") --not needed for PEI because our short name is just 'PEI' for the entire province
 
 def loadWatersheds(conn):
     print("Loading Watershed Boundaries")
@@ -70,9 +69,9 @@ def loadStreams(conn):
     flowpathNamesTable = publicSchema + "." + flowpathNames
     aoiTable = publicSchema + "." + aoi
 
-    aois = str(sheds)[1:-1].upper()
+    aois = 'PEI'
     query = f"""
-    SELECT id::varchar FROM {aoiTable} WHERE short_name IN ({aois});
+    SELECT id::varchar FROM {aoiTable} WHERE short_name IN ('{aois}');
     """
     with conn.cursor(cursor_factory=RealDictCursor) as cursor:
         cursor.execute(query)
@@ -207,14 +206,9 @@ def loadTrails(conn):
         t1.name,
         status,
         zone,
-        CASE
-            WHEN ST_WITHIN(t1.geometry,t2.geometry)
-            THEN t1.geometry
-            ELSE ST_Intersection(t1.geometry, t2.geometry)
-            END AS geometry
+        t1.geometry
     FROM
-    {temptable} t1
-    JOIN {wshedtable} t2 ON ST_Intersects(t1.geometry, t2.geometry);
+    {temptable} t1;
 
     ALTER TABLE {datatable} ADD COLUMN IF NOT EXISTS wshed_name varchar;
     UPDATE {datatable} t1 SET wshed_name = t2.name FROM {wshedtable} t2 WHERE ST_Contains(t2.geometry, t1.geometry);
@@ -224,6 +218,8 @@ def loadTrails(conn):
     ALTER TABLE {appconfig.dataSchema}.{trailTable} ADD COLUMN IF NOT EXISTS watershed_name varchar;
 
     ALTER TABLE {appconfig.dataSchema}.{trailTable} OWNER TO cwf_analyst;
+
+    SELECT Populate_Geometry_Columns('{appconfig.dataSchema}.{trailTable}'::regclass);
     """
 
     with conn.cursor() as cursor:
@@ -235,9 +231,9 @@ def main():
     print("Connecting to database")
 
     conn = appconfig.connectdb()
-    loadWatersheds(conn)
-    loadStreams(conn)
-    loadRoads(conn)
+    # loadWatersheds(conn)
+    # loadStreams(conn)
+    # loadRoads(conn)
     loadTrails(conn)
 
     print("Loading PEI dataset complete")
