@@ -86,8 +86,8 @@ def loadBarrierUpdates(connection):
             crossing_subtype varchar,
             notes varchar,
             update_status varchar,
-            geometry geometry(Point,2961),
-            snapped_point geometry(Point,2961)
+            geometry geometry(Point,{srid}),
+            snapped_point geometry(Point,{srid})
             
         );
 
@@ -98,11 +98,11 @@ def loadBarrierUpdates(connection):
         cursor.execute(query)
     connection.commit()
 
-    # load updates into a table
-    orgDb="dbname='" + appconfig.dbName + "' host='"+ appconfig.dbHost+"' port='"+appconfig.dbPort+"' user='"+appconfig.dbUser+"' password='"+ appconfig.dbPassword+"'"
+    # # load updates into a table
+    # orgDb="dbname='" + appconfig.dbName + "' host='"+ appconfig.dbHost+"' port='"+appconfig.dbPort+"' user='"+appconfig.dbUser+"' password='"+ appconfig.dbPassword+"'"
 
-    pycmd = '"' + appconfig.ogr + '" -overwrite -f "PostgreSQL" PG:"' + orgDb + '" -t_srs EPSG:' + appconfig.dataSrid + ' -nln "' + dbTargetSchema + '.' + dbTargetTable + '" -lco GEOMETRY_NAME=geometry "' + rawData + '" -oo EMPTY_STRING_AS_NULL=YES'
-    subprocess.run(pycmd)
+    # pycmd = '"' + appconfig.ogr + '" -overwrite -f "PostgreSQL" PG:"' + orgDb + '" -t_srs EPSG:' + appconfig.dataSrid + ' -nln "' + dbTargetSchema + '.' + dbTargetTable + '" -lco GEOMETRY_NAME=geometry "' + rawData + '" -oo EMPTY_STRING_AS_NULL=YES'
+    # subprocess.run(pycmd)
 
     query = f"""
         DROP TABLE IF EXISTS {dbTargetSchema}.{dbTargetTable}_archive;
