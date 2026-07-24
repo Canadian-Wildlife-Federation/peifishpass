@@ -33,6 +33,9 @@ if len(workingWatershedId) == 1:
 else:
     workingWatershedId = tuple(workingWatershedId)
 
+# override workingwatershedid for pei hydro network setup
+workingWatershedId = 'PEI'
+
 dbTargetStreamTable = appconfig.config['PROCESSING']['stream_table']
 
 watershedTable = appconfig.watershedTable
@@ -49,7 +52,7 @@ def main():
     with appconfig.connectdb() as conn:
 
         query = f"""
-        SELECT id::varchar FROM {aoiTable} WHERE short_name IN {workingWatershedId};
+        SELECT id::varchar FROM {aoiTable} WHERE short_name IN ('{workingWatershedId}');
         """
         with conn.cursor() as cursor:
             cursor.execute(query)

@@ -44,6 +44,9 @@ if len(workingWatershedId) == 1:
 else:
     workingWatershedId = tuple(workingWatershedId)
 
+# override workingwatershedid for pei hydro network setup
+workingWatershedId = 'PEI'
+
 dbTargetGeom = appconfig.config['ELEVATION_PROCESSING']['3dgeometry_field']
 demDir = appconfig.demDir
 
@@ -74,7 +77,7 @@ def getWatershedIds(conn):
     # aois = str(sheds)[1:-1].upper()
 
     query = f"""
-    SELECT id::varchar FROM {aoiTable} WHERE short_name IN {aois};
+    SELECT id::varchar FROM {aoiTable} WHERE short_name IN ('{aois}');
     """
     with conn.cursor(cursor_factory=RealDictCursor) as cursor:
         cursor.execute(query)

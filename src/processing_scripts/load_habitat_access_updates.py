@@ -50,9 +50,9 @@ def main():
                 habitat_type character varying COLLATE pg_catalog."default",
                 latitude double precision,
                 longitude double precision,
-                geom geometry(Point,2961),
+                geom geometry(Point,{appconfig.dataSrid}),
                 id uuid primary key,
-                snapped_point geometry(Point,2961),
+                snapped_point geometry(Point,{appconfig.dataSrid}),
                 stream_measure numeric,
                 stream_id_up uuid,
                 stream_id_down uuid
@@ -96,16 +96,19 @@ def main():
             cursor.execute(query)
         conn.commit()  
 
-        print("Loading habitat and accessibility updates")
-        layer = "habitat_access_updates"
-        orgDb="dbname='" + appconfig.dbName + "' host='"+ appconfig.dbHost+"' port='"+appconfig.dbPort+"' user='"+appconfig.dbUser+"' password='"+ appconfig.dbPassword+"'"
-        pycmd = '"' + appconfig.ogr + '" -f "PostgreSQL" PG:"' + orgDb + '" -t_srs EPSG:' + appconfig.dataSrid + ' -nlt CONVERT_TO_LINEAR  -nln "' + dbTargetSchema + '.' + datatable + '" -lco GEOMETRY_NAME=geom "' + file + '" ' + layer
-        subprocess.run(pycmd)
+        # print("Loading habitat and accessibility updates")
+        # layer = "habitat_access_updates"
+        # orgDb="dbname='" + appconfig.dbName + "' host='"+ appconfig.dbHost+"' port='"+appconfig.dbPort+"' user='"+appconfig.dbUser+"' password='"+ appconfig.dbPassword+"'"
+        # pycmd = '"' + appconfig.ogr + '" -f "PostgreSQL" PG:"' + orgDb + '" -t_srs EPSG:' + appconfig.dataSrid + ' -nlt CONVERT_TO_LINEAR  -nln "' + dbTargetSchema + '.' + datatable + '" -lco GEOMETRY_NAME=geom "' + file + '" ' + layer
+        # subprocess.run(pycmd)
 
         query = f"""
         ALTER TABLE {dbTargetSchema}.{datatable} DROP COLUMN IF EXISTS id;
         ALTER TABLE {dbTargetSchema}.{datatable} add column id uuid;
         UPDATE {dbTargetSchema}.{datatable} set id = gen_random_uuid();
+
+        ALTER TABLE {dbTargetSchema}.{datatable} DROP CONSTRAINT IF EXISTS habitat_access_updates_pkey;
+        ALTER TABLE {dbTargetSchema}.{datatable} ADD PRIMARY KEY (id);
         
         ALTER TABLE {dbTargetSchema}.{datatable} DROP COLUMN IF EXISTS snapped_point;
         ALTER TABLE {dbTargetSchema}.{datatable} add column snapped_point geometry(POINT, {appconfig.dataSrid});

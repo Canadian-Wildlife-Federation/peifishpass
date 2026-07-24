@@ -307,6 +307,8 @@ def getCABD(conn):
 
     # snaps barrier features to network
     query = f"""
+        DROP FUNCTION IF EXISTS public.snap_to_network(character varying, character varying, character varying, character varying, double precision);
+        
         CREATE OR REPLACE FUNCTION public.snap_to_network(src_schema varchar, src_table varchar, raw_geom varchar, snapped_geom varchar, max_distance_m double precision) RETURNS VOID AS $$
         DECLARE    
             pnt_rec RECORD;
@@ -322,6 +324,9 @@ def getCABD(conn):
             END LOOP;
         END;
         $$ LANGUAGE plpgsql;
+
+        ALTER FUNCTION public.snap_to_network(character varying, character varying, character varying, character varying, double precision)
+        OWNER TO cwf_analyst;
         
         SELECT public.snap_to_network('{dbTargetSchema}', '{dbBarrierTable}', 'original_point', 'snapped_point', '{snapDistance}');
 
