@@ -21,7 +21,7 @@ http://www.apache.org/licenses/LICENSE-2.0
 
 # Software Requirements
 * Python (tested with version 3.9.5)
-    * Modules: shapely, psycopg2, tifffile, requests
+    * Modules: shapely, psycopg2, tifffile, requests, imagecodecs
     
     
 * GDAL/OGR (comes installed with QGIS or can install standalone)
